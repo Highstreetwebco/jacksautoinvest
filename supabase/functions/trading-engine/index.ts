@@ -346,7 +346,21 @@ Deno.serve(async (req) => {
           const { instrument, bars: shortBars } = candidate;
           const longBars = await fetchSeries(instrument.symbol, "1h");
           const held = positions.some((position: { ticker?: string }) => position.ticker === instrument.ticker);
-          const current = analyse(shortBars, longBars, benchmark, held);
+          let current = analyse(shortBars, longBars, benchmark, held);
+          const heldPosition = positions.find((position: { ticker?: string }) => position.ticker === instrument.ticker);
+          const averagePrice = Number(heldPosition?.averagePrice || 0);
+          const currentPrice = Number(heldPosition?.currentPrice || current.referencePrice || 0);
+          const positionReturn = averagePrice > 0 ? ((currentPrice / averagePrice) - 1) * 100 : 0;
+          if (held && positionReturn <= -3) {
+            current = {
+              ...current,
+              verdict: "SELL",
+              confidence: 100,
+              score: Math.min(current.score, 20),
+              explanation: `Strict position stop: the paper position fell ${Math.abs(positionReturn).toFixed(2)}%, reaching the 3% adverse-move limit.`,
+              signals: { ...current.signals, strictPositionStop: true, positionReturnPercent: Number(positionReturn.toFixed(3)) }
+            };
+          }
           const currentData = String(shortBars[0]?.datetime || "").startsWith(marketDate);
           return {
             instrument,
@@ -386,7 +400,7 @@ Deno.serve(async (req) => {
               candidatesDeepAnalysed: deepCandidates.length
             },
             reference_price: result.referencePrice,
-            strategy_version: "opportunity-engine-v5"
+            strategy_version: "medium-high-risk-v6"
           };
           const testCash = Number(settings.test_cash);
           if (result.verdict === "BUY" && !held && testCash >= 1) {
