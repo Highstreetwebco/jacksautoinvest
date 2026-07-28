@@ -27,8 +27,7 @@ const ema = (values: number[], period: number) => {
 };
 const rsi = (values: number[], period = 14) => {
   if (values.length <= period) return 50;
-  const sample = values.slice(-period - 1);
-  const changes = sample.slice(1).map((value, index) => value - sample[index]);
+  const changes = values.slice(-period - 1).slice(1).map((value, index) => value - values.slice(-period - 1)[index]);
   const gains = average(changes.map(change => Math.max(0, change)));
   const losses = average(changes.map(change => Math.max(0, -change)));
   if (losses === 0) return 100;
@@ -101,10 +100,10 @@ export function analyse(shortBarsNewest: Bar[], longBarsNewest: Bar[], benchmark
   const sellAgreement = fastTrend < 0 && (slowTrend < 0 || macd < 0);
   const verdict = held
     ? (score <= 38 || sellAgreement ? "SELL" : "HOLD")
-    : (score >= 70 && buyAgreement ? "BUY" : "HOLD");
+    : (score >= 64 && buyAgreement ? "BUY" : "HOLD");
   const confidence = verdict === "HOLD" ? Math.round(Math.abs(score - 50) * 1.3) : Math.round(clamp(Math.abs(score - 50) * 2, 55, 95));
   const suggestedExposurePercent = verdict === "BUY"
-    ? Math.round(clamp(6 + ((score - 70) * 0.7) - (volatilityPercent * 2), 5, 20))
+    ? Math.round(clamp(6 + ((score - 64) * 0.7) - (volatilityPercent * 2), 5, 20))
     : 0;
 
   const explanation = verdict === "BUY"
