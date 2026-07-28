@@ -43,6 +43,23 @@
     const total = Number(data?.testAccount?.total || free + invested);
     return { positions, invested, free, total };
   }
+  function decisionChecklist(decision) {
+    const s = decision?.signals || {};
+    if (s.fastTrendPercent == null) return "";
+    const checks = [
+      ["Score 60+", Number(decision.score || 0) >= 60, `${Number(decision.score || 0)}/100`],
+      ["Immediate trend", Number(s.fastTrendPercent) > 0, `${Number(s.fastTrendPercent).toFixed(2)}%`],
+      ["Hourly trend", Number(s.hourlyTrendPercent) > 0, `${Number(s.hourlyTrendPercent).toFixed(2)}%`],
+      ["MACD momentum", Number(s.macdHistogram) > 0, Number(s.macdHistogram).toFixed(3)],
+      ["Price impulse", Number(s.impulsePercent) > 0, `${Number(s.impulsePercent).toFixed(2)}%`],
+      ["Breakout", Number(s.breakoutPercent) > 0, `${Number(s.breakoutPercent).toFixed(2)}%`],
+      ["Buying volume", Number(s.volumeRatio) >= 1.05, `${Number(s.volumeRatio).toFixed(2)}×`],
+      ["Market supportive", s.riskOff === false, s.riskOff ? "Risk off" : "No veto"]
+    ];
+    return `<div class="decision-checks">${checks.map(([label, passed, value]) =>
+      `<span class="${passed ? "pass" : "fail"}"><i>${passed ? "✓" : "×"}</i><b>${label}</b><small>${value}</small></span>`
+    ).join("")}</div>`;
+  }
   function renderConnected() {
     const { positions, invested, free, total } = portfolioNumbers(brokerState);
     const startingBalance = Number(brokerState.rules?.startingBalance || 500);
@@ -85,7 +102,7 @@
     $("#confidenceSignal").textContent = latest?.confidence == null ? "—" : `${latest.confidence}%`;
     $("#decisionTitle").textContent = latest ? `${latest.action} ${latest.symbol || ""}`.trim() : "Standing by";
     $("#decisionReason").textContent = latest?.reason || "The multi-signal engine is waiting for its first complete market analysis.";
-    $("#activityList").innerHTML = visibleDecisions.length ? visibleDecisions.map(d => `<article><span class="trade-icon ${d.action.toLowerCase()}">${d.action[0]}</span><div><strong>${d.action} · ${d.symbol || "Engine"}</strong><small>${d.reason}</small></div><div><b>${d.quantity ? `${d.quantity} units` : "No order"}</b><small>${new Date(d.created_at).toLocaleString("en-GB")}</small></div></article>`).join("") : `<article class="feed-placeholder"><span class="trade-icon hold">—</span><div><strong>One-minute checks are running</strong><small>The next full candidate decision will appear here after a completed market bar.</small></div></article>`;
+    $("#activityList").innerHTML = visibleDecisions.length ? visibleDecisions.map(d => `<article><span class="trade-icon ${d.action.toLowerCase()}">${d.action[0]}</span><div><strong>${d.action} · ${d.symbol || "Engine"}</strong><small>${d.reason}</small>${decisionChecklist(d)}</div><div><b>${d.quantity ? `${d.quantity} units` : "No order"}</b><small>${new Date(d.created_at).toLocaleString("en-GB")}</small></div></article>`).join("") : `<article class="feed-placeholder"><span class="trade-icon hold">—</span><div><strong>One-minute checks are running</strong><small>The next full candidate decision will appear here after a completed market bar.</small></div></article>`;
   }
   function renderChart(snapshots) {
     const values = snapshots.map(s => Number(s.value)).filter(Number.isFinite);
