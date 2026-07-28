@@ -5,7 +5,6 @@
   const SESSION_KEY = "jai-supabase-session";
   let session = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
   let brokerState = null;
-  let refreshTimer = null;
   const money = value => new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(Number(value || 0));
   const configured = () => Boolean(cfg.supabaseUrl && cfg.supabaseAnonKey);
   const headers = () => ({ apikey: cfg.supabaseAnonKey, Authorization: `Bearer ${session?.access_token || cfg.supabaseAnonKey}`, "Content-Type": "application/json" });
@@ -48,19 +47,23 @@
     const { positions, invested, free, total } = portfolioNumbers(brokerState);
     const gain = total - 100;
     $("#marketStatus").innerHTML = `<i></i> Trading 212 Demo connected`;
-    $("#engineState").textContent = brokerState.enabled ? "RUNNING" : "STOPPED";
-    $("#engineMessage").textContent = brokerState.enabled ? "Real-market paper engine active" : "Paper broker connected and ready";
+    $("#engineState").textContent = brokerState.enabled ? "RUNNING" : brokerState.autopilotEnabled ? "WAITING" : "STOPPED";
+    $("#engineMessage").textContent = brokerState.enabled
+      ? "Background paper engine active"
+      : brokerState.autopilotEnabled ? "Automatic start at the next market open" : "Paper broker connected and ready";
     $("#engineLight").classList.toggle("running", brokerState.enabled);
-    $("#startEngine").disabled = brokerState.enabled; $("#stopEngine").disabled = !brokerState.enabled;
+    $("#startEngine").disabled = brokerState.autopilotEnabled; $("#stopEngine").disabled = !brokerState.autopilotEnabled;
     $("#portfolioValue").textContent = money(total);
     $("#totalReturn").textContent = `${gain >= 0 ? "+" : ""}${money(gain)} · ${gain >= 0 ? "+" : ""}${gain.toFixed(2)}%`;
     $("#totalReturn").className = `return ${gain >= 0 ? "positive" : "negative"}`;
     $("#cashValue").textContent = money(free); $("#investedValue").textContent = money(invested);
     $("#todayChange").textContent = `${gain >= 0 ? "+" : ""}${money(gain)}`;
     $("#tradeCount").textContent = String(brokerState.decisions?.filter(d => d.action !== "HOLD").length || 0);
-    $("#chartCaption").textContent = brokerState.enabled ? "REAL-MARKET PAPER VALUE" : "ENGINE STOPPED";
+    $("#chartCaption").textContent = brokerState.enabled ? "LIVE BACKGROUND TEST" : brokerState.autopilotEnabled ? "WAITING FOR MARKET" : "ENGINE STOPPED";
     $("#lastUpdated").textContent = `Broker synced ${new Date(brokerState.updatedAt).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}`;
-    $("#analysisText").textContent = brokerState.enabled ? "Waiting for the next secured market cycle…" : "Connected—press Start when ready";
+    $("#analysisText").textContent = brokerState.enabled
+      ? "Automatic secured market cycles are running in the background."
+      : brokerState.autopilotEnabled ? "The one-month test is armed and will resume automatically." : "Connected—press Start when ready";
     renderChart(brokerState.snapshots || []);
     $("#positionGrid").innerHTML = positions.length ? positions.map(p => `<article class="position-card"><div><span class="ticker">${p.ticker || p.instrument?.ticker || "POSITION"}</span><small>Trading 212 Demo</small></div><strong>${money(p.currentValue ?? Number(p.quantity || 0) * Number(p.currentPrice || 0))}</strong><div class="position-meta"><span>${Number(p.quantity || 0).toFixed(4)} units</span><b>${money(p.ppl || 0)}</b></div></article>`).join("") : `<article class="empty-state"><span>◎</span><h3>No open paper positions</h3><p>The connected Demo account currently holds cash.</p></article>`;
     const decisions = brokerState.decisions || [];
@@ -86,11 +89,6 @@
     const button = action === "start" ? $("#confirmStart") : $("#stopEngine"); button.disabled = true;
     try {
       brokerState = await broker(action); $("#confirmPanel").hidden = true; document.body.style.overflow = ""; renderConnected();
-      clearInterval(refreshTimer);
-      if (action === "start") {
-        brokerState = await broker("tick"); renderConnected();
-        refreshTimer = setInterval(async () => { try { brokerState = await broker("tick"); renderConnected(); } catch (error) { renderDisconnected(error.message); } }, 60000);
-      }
     } catch (error) { $("#confirmCopy").textContent = error.message; renderDisconnected(error.message); }
     finally { button.disabled = false; }
   }
@@ -136,7 +134,9 @@
   $("#menuButton").addEventListener("click", () => { const open = $("#mainNav").classList.toggle("open"); $("#menuButton").setAttribute("aria-expanded", String(open)); });
   $("#mainNav").querySelectorAll("a").forEach(a => a.addEventListener("click", () => $("#mainNav").classList.remove("open")));
   $("#startEngine").addEventListener("click", () => {
-    $("#confirmCopy").textContent = configured() && session ? "Trading 212 Demo is ready to receive genuine paper orders using real market conditions." : "The secure paper broker must be connected before the engine can start.";
+    $("#confirmCopy").textContent = configured() && session
+      ? "Start the one-month background test. It will run automatically whenever the US market is open—even when this website is closed."
+      : "The secure paper broker must be connected before the background test can start.";
     $("#confirmPanel").hidden = false; document.body.style.overflow = "hidden";
     $("#loginFields").hidden = Boolean(session);
     $("#confirmStart").hidden = !session;
