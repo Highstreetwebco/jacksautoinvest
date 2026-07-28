@@ -400,7 +400,7 @@ Deno.serve(async (req) => {
               candidatesDeepAnalysed: deepCandidates.length
             },
             reference_price: result.referencePrice,
-            strategy_version: "medium-high-risk-v6"
+            strategy_version: "three-signal-opportunity-v7"
           };
           const testCash = Number(settings.test_cash);
           if (result.verdict === "BUY" && !held && testCash >= 1) {
