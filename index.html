@@ -4,132 +4,151 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#07130f">
-  <meta name="description" content="Jack Auto Invest — paper investing control centre">
+  <meta name="description" content="Jack Auto Invest — private £100 paper-trading lab">
   <title>Jack Auto Invest</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="topbar">
     <a class="brand" href="#top" aria-label="Jack Auto Invest home">
-      <span class="brand-mark">JA</span>
-      <span>Jack <b>Auto Invest</b></span>
+      <span class="brand-mark">JA</span><span>Jack <b>Auto Invest</b></span>
     </a>
     <div class="top-actions">
-      <span class="market-status"><i></i> Paper market live</span>
+      <span id="marketStatus" class="market-status"><i></i> Engine ready</span>
       <button id="menuButton" class="menu-button" type="button" aria-expanded="false" aria-controls="mainNav">Menu</button>
     </div>
     <nav id="mainNav" class="main-nav" aria-label="Main navigation">
-      <a class="active" href="#dashboard">Dashboard</a>
-      <a href="#strategy">Strategy</a>
-      <a href="#activity">Activity</a>
+      <a class="active" href="#dashboard">Live test</a>
+      <a href="#positions">Positions</a>
+      <a href="#activity">Trades</a>
       <a href="#safety">Safety</a>
     </nav>
   </header>
 
   <main id="top">
-    <section id="dashboard" class="hero shell">
-      <div class="hero-copy">
-        <p class="eyebrow">Personal investment control centre</p>
-        <h1>Build wealth.<br><span>Keep control.</span></h1>
-        <p class="hero-intro">Explore automated investing ideas using simulated money, transparent decisions and strict safety limits.</p>
-        <div class="hero-actions">
-          <button id="runSimulation" class="button primary" type="button">Run today’s simulation</button>
-          <a class="button secondary" href="#strategy">Review strategy</a>
+    <section id="dashboard" class="trading-dashboard shell">
+      <div class="dashboard-heading">
+        <div>
+          <p class="eyebrow">Private paper-trading laboratory</p>
+          <h1>£100 AI test account</h1>
+          <p>The engine treats the balance like real cash, but every order remains simulated.</p>
+        </div>
+        <div class="engine-controls">
+          <button id="startEngine" class="button primary start-button" type="button"><span class="control-dot"></span>Start engine</button>
+          <button id="stopEngine" class="button danger" type="button" disabled>Stop</button>
+          <button id="resetAccount" class="icon-button" type="button" title="Reset paper account" aria-label="Reset paper account">↻</button>
         </div>
       </div>
 
-      <article class="portfolio-card">
-        <div class="card-topline">
-          <div><span>Paper portfolio</span><strong id="portfolioValue">£25,480.62</strong></div>
-          <span class="pill positive">+15.2% YTD</span>
+      <section class="terminal-card" aria-label="Live paper portfolio">
+        <div class="value-row">
+          <div>
+            <span class="label">LIVE PORTFOLIO VALUE</span>
+            <strong id="portfolioValue">£100.00</strong>
+            <span id="totalReturn" class="return flat">£0.00 · 0.00%</span>
+          </div>
+          <div class="engine-state">
+            <span id="engineLight"></span>
+            <div><b id="engineState">STOPPED</b><small id="engineMessage">Press Start to begin the paper test</small></div>
+          </div>
         </div>
-        <div class="chart-wrap" aria-label="Simulated portfolio chart">
-          <svg viewBox="0 0 640 240" role="img" aria-label="Portfolio rising over the last six months">
+
+        <div class="live-chart" aria-label="Live portfolio value chart">
+          <svg id="portfolioChart" viewBox="0 0 900 300" role="img" aria-label="Portfolio value over time" preserveAspectRatio="none">
             <defs>
-              <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="#59e6a7" stop-opacity=".38"/>
+              <linearGradient id="liveFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#59e6a7" stop-opacity=".35"/>
                 <stop offset="100%" stop-color="#59e6a7" stop-opacity="0"/>
               </linearGradient>
             </defs>
-            <path class="chart-area" d="M0 205 C55 188 72 194 116 167 S195 181 239 142 S317 151 360 112 S441 132 485 78 S572 85 640 29 L640 240 L0 240 Z"/>
-            <path class="chart-line" d="M0 205 C55 188 72 194 116 167 S195 181 239 142 S317 151 360 112 S441 132 485 78 S572 85 640 29"/>
-            <circle cx="640" cy="29" r="7"/>
+            <g class="chart-grid">
+              <line x1="0" y1="30" x2="900" y2="30"/><line x1="0" y1="110" x2="900" y2="110"/>
+              <line x1="0" y1="190" x2="900" y2="190"/><line x1="0" y1="270" x2="900" y2="270"/>
+            </g>
+            <path id="chartArea" class="chart-area" d="M0 150 L900 150 L900 300 L0 300 Z"/>
+            <path id="chartLine" class="chart-line" d="M0 150 L900 150"/>
+            <circle id="chartPoint" cx="900" cy="150" r="7"/>
           </svg>
-          <div class="chart-labels"><span>Feb</span><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span><span>Jul</span></div>
+          <div class="live-indicator"><i></i><span id="chartCaption">WAITING FOR START</span></div>
         </div>
-        <div class="portfolio-stats">
-          <div><span>Today</span><strong class="positive">+£184.30</strong></div>
-          <div><span>Total return</span><strong>+£3,362.14</strong></div>
-          <div><span>Available cash</span><strong>£1,240.00</strong></div>
+
+        <div class="account-stats">
+          <div><span>Available cash</span><strong id="cashValue">£100.00</strong></div>
+          <div><span>Currently invested</span><strong id="investedValue">£0.00</strong></div>
+          <div><span>Today’s change</span><strong id="todayChange">£0.00</strong></div>
+          <div><span>Trades made</span><strong id="tradeCount">0</strong></div>
         </div>
-      </article>
+      </section>
+
+      <section class="signal-strip" aria-label="AI market analysis">
+        <div class="brain"><span>AI</span><i id="brainPulse"></i></div>
+        <div class="signal-copy"><span>ENGINE THINKING</span><strong id="analysisText">Waiting to analyse the market…</strong></div>
+        <div class="signal"><span>Trend</span><b id="trendSignal">—</b></div>
+        <div class="signal"><span>Sentiment</span><b id="sentimentSignal">—</b></div>
+        <div class="signal"><span>Confidence</span><b id="confidenceSignal">—</b></div>
+      </section>
     </section>
 
     <section class="notice shell" aria-label="Important beta notice">
-      <span>SIMULATION MODE</span>
-      <p>This beta uses example data and cannot place real trades or access money.</p>
+      <span>PAPER ONLY</span>
+      <p>Uses simulated prices and fake cash. It cannot connect to a broker, place real orders or guarantee a profit.</p>
     </section>
 
-    <section id="strategy" class="section shell">
+    <section id="positions" class="section shell">
       <div class="section-heading">
-        <div><p class="eyebrow">Your rules</p><h2>Strategy engine</h2></div>
-        <span class="updated">Updated just now</span>
+        <div><p class="eyebrow">Where the £100 is now</p><h2>Live positions</h2></div>
+        <span id="lastUpdated" class="updated">Not started</span>
       </div>
-      <div class="strategy-grid">
-        <article class="strategy-card featured">
-          <div class="strategy-icon">◎</div>
-          <div><span>Active strategy</span><h3>Balanced Growth</h3><p>Targets steady long-term growth with controlled exposure to higher-volatility assets.</p></div>
-          <div class="allocation"><span>Global equity <b>55%</b></span><i style="--value:55%"></i><span>Technology <b>20%</b></span><i style="--value:20%"></i><span>Bonds & cash <b>25%</b></span><i style="--value:25%"></i></div>
-        </article>
-        <article class="strategy-card metric"><span>Risk level</span><strong>6<span>/10</span></strong><p>Medium–high</p></article>
-        <article class="strategy-card metric"><span>Monthly contribution</span><strong>£500</strong><p>Next: 1 August</p></article>
-        <article class="strategy-card metric"><span>Maximum daily loss</span><strong>2.0%</strong><p>Trading pauses automatically</p></article>
+      <div id="positionGrid" class="position-grid">
+        <article class="empty-state"><span>◎</span><h3>No open positions</h3><p>Start the engine and it will only buy when its rules identify a suitable paper trade.</p></article>
       </div>
     </section>
 
     <section id="activity" class="section shell split">
       <div>
-        <div class="section-heading"><div><p class="eyebrow">Explain every move</p><h2>Paper activity</h2></div><button id="refreshActivity" class="text-button" type="button">Refresh</button></div>
+        <div class="section-heading"><div><p class="eyebrow">Every decision recorded</p><h2>Live trade feed</h2></div><span class="updated">Newest first</span></div>
         <div id="activityList" class="activity-list">
-          <article><span class="trade-icon buy">B</span><div><strong>Buy · Global Equity ETF</strong><small>Portfolio drifted below its 55% target</small></div><div><b>£320.00</b><small>10:42</small></div></article>
-          <article><span class="trade-icon hold">H</span><div><strong>Hold · Technology ETF</strong><small>Momentum positive, exposure at target</small></div><div><b>£0.00</b><small>09:58</small></div></article>
-          <article><span class="trade-icon sell">S</span><div><strong>Sell · UK Equity ETF</strong><small>Rebalanced after concentration limit</small></div><div><b>£145.00</b><small>Yesterday</small></div></article>
+          <article class="feed-placeholder"><span class="trade-icon hold">—</span><div><strong>The engine has not traded yet</strong><small>Its first decision will appear here with a clear reason.</small></div></article>
         </div>
       </div>
       <aside class="decision-card">
         <span class="decision-orbit">AI</span>
         <p class="eyebrow">Latest decision</p>
-        <h2>Why it acted</h2>
-        <p>Global equities fell 1.4% below their target allocation while the portfolio stayed inside every risk rule.</p>
-        <dl><div><dt>Confidence</dt><dd>87%</dd></div><div><dt>Risk checks</dt><dd class="positive">All passed</dd></div><div><dt>Mode</dt><dd>Paper only</dd></div></dl>
+        <h2 id="decisionTitle">Standing by</h2>
+        <p id="decisionReason">Start the paper engine to begin analysing price trend, momentum, volatility and simulated news sentiment.</p>
+        <dl>
+          <div><dt>Risk per trade</dt><dd>Max 20%</dd></div>
+          <div><dt>Loss guard</dt><dd class="positive">2% daily</dd></div>
+          <div><dt>Mode</dt><dd>Paper only</dd></div>
+        </dl>
       </aside>
     </section>
 
     <section id="safety" class="section shell">
-      <div class="section-heading"><div><p class="eyebrow">Non-negotiable controls</p><h2>Safety guardrails</h2></div><span class="pill safe">All active</span></div>
+      <div class="section-heading"><div><p class="eyebrow">Built before any broker link</p><h2>Real-money safety wall</h2></div><span class="pill safe">Broker locked</span></div>
       <div class="safety-grid">
-        <article><span>01</span><h3>Paper trading only</h3><p>No broker connection and no real-money orders in this beta.</p></article>
-        <article><span>02</span><h3>Loss protection</h3><p>Activity stops if the daily or total loss limit is reached.</p></article>
-        <article><span>03</span><h3>Human approval</h3><p>Any future live-trading mode would require clear approval and an emergency stop.</p></article>
-        <article><span>04</span><h3>Full audit trail</h3><p>Every simulated decision records what happened and why.</p></article>
+        <article><span>01</span><h3>Fake £100 balance</h3><p>The test behaves like an account but never touches your money.</p></article>
+        <article><span>02</span><h3>Immediate stop</h3><p>Stop freezes new decisions instantly. Open paper positions remain visible.</p></article>
+        <article><span>03</span><h3>Strict exposure limit</h3><p>No single simulated position can use more than 20% of the account.</p></article>
+        <article><span>04</span><h3>Future broker adapter</h3><p>A regulated broker connection can later be added behind separate approval and security checks.</p></article>
       </div>
     </section>
   </main>
 
   <footer class="footer shell">
     <div class="brand"><span class="brand-mark">JA</span><span>Jack <b>Auto Invest</b></span></div>
-    <p>Prototype · Simulation only · Not financial advice</p>
+    <p>Private prototype · Simulated market · Not financial advice</p>
   </footer>
 
-  <div id="simulationPanel" class="simulation-panel" role="dialog" aria-modal="true" aria-labelledby="simulationTitle" hidden>
+  <div id="confirmPanel" class="simulation-panel" role="dialog" aria-modal="true" aria-labelledby="confirmTitle" hidden>
     <div class="simulation-card">
-      <button id="closeSimulation" class="close-button" type="button" aria-label="Close simulation">×</button>
-      <span class="pulse-icon">↗</span>
-      <p class="eyebrow">Simulation complete</p>
-      <h2 id="simulationTitle">Portfolio stayed inside your rules</h2>
-      <p>The strategy reviewed 24 market signals and made one simulated rebalance.</p>
-      <div class="simulation-result"><span>Projected 12-month range</span><strong>£27,900–£31,400</strong><small>Example projection, not a guarantee</small></div>
-      <button id="finishSimulation" class="button primary" type="button">Back to dashboard</button>
+      <button id="closeConfirm" class="close-button" type="button" aria-label="Close">×</button>
+      <span class="pulse-icon">▶</span>
+      <p class="eyebrow">Start paper engine</p>
+      <h2 id="confirmTitle">Put the fake £100 to work?</h2>
+      <p>The test will create changing simulated prices, analyse signals and make paper buy and sell decisions. No real account is connected.</p>
+      <div class="simulation-result"><span>Starting balance</span><strong>£100.00</strong><small>Your progress is saved on this device</small></div>
+      <button id="confirmStart" class="button primary" type="button">Start with fake £100</button>
     </div>
   </div>
   <script src="app.js" defer></script>
