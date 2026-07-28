@@ -62,7 +62,7 @@
     $("#totalReturn").className = `return ${gain >= 0 ? "positive" : "negative"}`;
     $("#cashValue").textContent = money(free); $("#investedValue").textContent = money(invested);
     $("#todayChange").textContent = `${gain >= 0 ? "+" : ""}${money(gain)}`;
-    $("#tradeCount").textContent = String(brokerState.decisions?.filter(d => d.action !== "HOLD").length || 0);
+    $("#tradeCount").textContent = String(brokerState.decisions?.filter(d => ["BUY", "SELL"].includes(d.action)).length || 0);
     $("#chartCaption").textContent = systemRunning ? brokerState.marketOpen ? "LIVE BACKGROUND TEST" : "BACKGROUND ENGINE RUNNING" : "ENGINE STOPPED";
     const lastCheck = brokerState.lastBackgroundRun ? new Date(brokerState.lastBackgroundRun) : null;
     const checkAge = lastCheck ? Math.max(0, Math.floor((Date.now() - lastCheck.getTime()) / 1000)) : null;
@@ -77,14 +77,15 @@
     renderChart(brokerState.snapshots || []);
     $("#positionGrid").innerHTML = positions.length ? positions.map(p => `<article class="position-card"><div><span class="ticker">${p.ticker || p.instrument?.ticker || "POSITION"}</span><small>Trading 212 Demo</small></div><strong>${money(p.currentValue ?? Number(p.quantity || 0) * Number(p.currentPrice || 0))}</strong><div class="position-meta"><span>${Number(p.quantity || 0).toFixed(4)} units</span><b>${money(p.ppl || 0)}</b></div></article>`).join("") : `<article class="empty-state"><span>◎</span><h3>No open paper positions</h3><p>The connected Demo account currently holds cash.</p></article>`;
     const decisions = brokerState.decisions || [];
-    const latest = decisions[0];
+    const visibleDecisions = decisions.filter(d => d.strategy_version !== "minute-risk-check-v1");
+    const latest = visibleDecisions[0];
     const latestSignals = latest?.signals || {};
     $("#trendSignal").textContent = latestSignals.hourlyTrendPercent == null ? "—" : `${Number(latestSignals.hourlyTrendPercent) >= 0 ? "↑" : "↓"} ${Math.abs(Number(latestSignals.hourlyTrendPercent)).toFixed(2)}%`;
     $("#sentimentSignal").textContent = latestSignals.riskOff == null ? "—" : latestSignals.riskOff ? "Risk off" : "Supportive";
     $("#confidenceSignal").textContent = latest?.confidence == null ? "—" : `${latest.confidence}%`;
     $("#decisionTitle").textContent = latest ? `${latest.action} ${latest.symbol || ""}`.trim() : "Standing by";
     $("#decisionReason").textContent = latest?.reason || "The multi-signal engine is waiting for its first complete market analysis.";
-    $("#activityList").innerHTML = decisions.length ? decisions.map(d => `<article><span class="trade-icon ${d.action.toLowerCase()}">${d.action[0]}</span><div><strong>${d.action} · ${d.symbol || "Engine"}</strong><small>${d.reason}</small></div><div><b>${d.quantity ? `${d.quantity} units` : "No order"}</b><small>${new Date(d.created_at).toLocaleString("en-GB")}</small></div></article>`).join("") : `<article class="feed-placeholder"><span class="trade-icon hold">—</span><div><strong>No broker decisions yet</strong><small>Real paper orders will appear here after the engine starts.</small></div></article>`;
+    $("#activityList").innerHTML = visibleDecisions.length ? visibleDecisions.map(d => `<article><span class="trade-icon ${d.action.toLowerCase()}">${d.action[0]}</span><div><strong>${d.action} · ${d.symbol || "Engine"}</strong><small>${d.reason}</small></div><div><b>${d.quantity ? `${d.quantity} units` : "No order"}</b><small>${new Date(d.created_at).toLocaleString("en-GB")}</small></div></article>`).join("") : `<article class="feed-placeholder"><span class="trade-icon hold">—</span><div><strong>One-minute checks are running</strong><small>The next full candidate decision will appear here after a completed market bar.</small></div></article>`;
   }
   function renderChart(snapshots) {
     const values = snapshots.map(s => Number(s.value)).filter(Number.isFinite);
