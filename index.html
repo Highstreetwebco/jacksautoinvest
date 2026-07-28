@@ -150,8 +150,10 @@
       <div id="loginFields" class="login-fields">
         <label for="ownerEmail">Owner email</label>
         <input id="ownerEmail" type="email" autocomplete="email" placeholder="you@example.com">
-        <button id="sendLoginLink" class="button secondary" type="button">Email me a secure login link</button>
-        <small id="loginMessage">Only the approved owner email will be allowed to use the engine.</small>
+        <label for="ownerPassword">Password</label>
+        <input id="ownerPassword" type="password" autocomplete="current-password" placeholder="Your private password">
+        <button id="signInButton" class="button secondary" type="button">Sign in securely</button>
+        <small id="loginMessage">Only the approved owner account can use the engine.</small>
       </div>
       <div class="simulation-result"><span>Starting balance</span><strong>£100.00</strong><small>Your progress is saved on this device</small></div>
       <button id="confirmStart" class="button primary" type="button">Check connection</button>
