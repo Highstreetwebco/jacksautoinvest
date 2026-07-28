@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { analyse, type Bar } from "./strategy.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -66,36 +67,19 @@ Deno.serve(async (req) => {
     const marketMinutes = Number(marketParts.hour) * 60 + Number(marketParts.minute);
     const marketOpen = !["Sat", "Sun"].includes(marketParts.weekday) && marketMinutes >= 570 && marketMinutes < 960;
     const trialHasExpired = Boolean(settings.trial_ends_at && now.getTime() >= new Date(settings.trial_ends_at).getTime());
-    const trialActive = settings.autopilot_enabled &&
-      settings.daily_paused_on !== marketDate &&
-      !trialHasExpired;
+    const trialActive = settings.autopilot_enabled && settings.daily_paused_on !== marketDate && !trialHasExpired;
 
     if (action === "start") {
       const trialStartedAt = !settings.trial_started_at || trialHasExpired ? now.toISOString() : settings.trial_started_at;
       const trialEndsAt = !settings.trial_ends_at || trialHasExpired ? new Date(now.getTime() + 30 * 86400000).toISOString() : settings.trial_ends_at;
-      await admin.from("engine_settings").update({
-        enabled: marketOpen,
-        autopilot_enabled: true,
-        trial_started_at: trialStartedAt,
-        trial_ends_at: trialEndsAt,
-        updated_at: now.toISOString()
-      }).eq("user_id", user.id);
+      await admin.from("engine_settings").update({ enabled: marketOpen, autopilot_enabled: true, trial_started_at: trialStartedAt, trial_ends_at: trialEndsAt, updated_at: now.toISOString() }).eq("user_id", user.id);
       Object.assign(settings, { enabled: marketOpen, autopilot_enabled: true, trial_started_at: trialStartedAt, trial_ends_at: trialEndsAt });
     } else if (action === "stop") {
-      await admin.from("engine_settings").update({
-        enabled: false,
-        autopilot_enabled: false,
-        updated_at: now.toISOString()
-      }).eq("user_id", user.id);
+      await admin.from("engine_settings").update({ enabled: false, autopilot_enabled: false, updated_at: now.toISOString() }).eq("user_id", user.id);
       Object.assign(settings, { enabled: false, autopilot_enabled: false });
     } else if (action === "scheduled") {
       const enabled = Boolean(trialActive && marketOpen);
-      await admin.from("engine_settings").update({
-        enabled,
-        autopilot_enabled: trialHasExpired ? false : settings.autopilot_enabled,
-        last_background_run: now.toISOString(),
-        updated_at: now.toISOString()
-      }).eq("user_id", user.id);
+      await admin.from("engine_settings").update({ enabled, autopilot_enabled: trialHasExpired ? false : settings.autopilot_enabled, last_background_run: now.toISOString(), updated_at: now.toISOString() }).eq("user_id", user.id);
       settings.enabled = enabled;
       if (trialHasExpired) settings.autopilot_enabled = false;
       settings.last_background_run = now.toISOString();
@@ -112,10 +96,7 @@ Deno.serve(async (req) => {
         const cachedAt = new Date().toISOString();
         settings.broker_positions_cache = latest;
         settings.broker_cache_updated_at = cachedAt;
-        await admin.from("engine_settings").update({
-          broker_positions_cache: latest,
-          broker_cache_updated_at: cachedAt
-        }).eq("user_id", user.id);
+        await admin.from("engine_settings").update({ broker_positions_cache: latest, broker_cache_updated_at: cachedAt }).eq("user_id", user.id);
         return latest;
       } catch (error) {
         if (error instanceof Error && error.message === "RATE_LIMITED") {
@@ -126,34 +107,19 @@ Deno.serve(async (req) => {
       }
     };
     let brokerPositions = await loadBrokerPositions();
-    let ownedDecisions = (await admin.from("engine_decisions")
-      .select("symbol,action,quantity")
-      .eq("user_id", user.id)
-      .in("action", ["BUY", "SELL"])
-      .order("created_at", { ascending: true })).data || [];
+    let ownedDecisions = (await admin.from("engine_decisions").select("symbol,action,quantity").eq("user_id", user.id).in("action", ["BUY", "SELL"]).order("created_at", { ascending: true })).data || [];
     const testPositions = () => universe.flatMap(instrument => {
-      const ownedQuantity = ownedDecisions
-        .filter(decision => decision.symbol === instrument.symbol)
-        .reduce((total, decision) => total + Number(decision.quantity || 0), 0);
+      const ownedQuantity = ownedDecisions.filter(decision => decision.symbol === instrument.symbol).reduce((total, decision) => total + Number(decision.quantity || 0), 0);
       if (ownedQuantity <= 0) return [];
       const brokerPosition = brokerPositions.find((position: { ticker?: string }) => position.ticker === instrument.ticker);
       if (!brokerPosition) return [];
       const brokerQuantity = Math.abs(Number(brokerPosition.quantity || 0));
       const currentPrice = Number(brokerPosition.currentPrice || brokerPosition.averagePrice || 0);
       const scaledPpl = brokerQuantity > 0 ? Number(brokerPosition.ppl || 0) * (ownedQuantity / brokerQuantity) : 0;
-      return [{
-        ...brokerPosition,
-        ticker: instrument.ticker,
-        quantity: ownedQuantity,
-        currentPrice,
-        currentValue: ownedQuantity * currentPrice,
-        ppl: scaledPpl
-      }];
+      return [{ ...brokerPosition, ticker: instrument.ticker, quantity: ownedQuantity, currentPrice, currentValue: ownedQuantity * currentPrice, ppl: scaledPpl }];
     });
     let positions = testPositions();
-    const positionValue = (items: Array<Record<string, unknown>>) =>
-      items.reduce((sum, position) => sum + Number(position.currentValue ?? Number(position.quantity || 0) * Number(position.currentPrice || 0)), 0);
-
+    const positionValue = (items: Array<Record<string, unknown>>) => items.reduce((sum, position) => sum + Number(position.currentValue ?? Number(position.quantity || 0) * Number(position.currentPrice || 0)), 0);
     const runTradingCycle = settings.enabled && ["tick", "scheduled", "start"].includes(action);
 
     if (runTradingCycle) {
@@ -164,79 +130,77 @@ Deno.serve(async (req) => {
       const openingValue = Number(openingResult.data?.value || currentTotal);
       const lossPercent = openingValue > 0 ? ((openingValue - currentTotal) / openingValue) * 100 : 0;
       if (lossPercent >= Number(settings.daily_loss_limit)) {
-        await admin.from("engine_settings").update({
-          enabled: false,
-          daily_paused_on: marketDate,
-          updated_at: new Date().toISOString()
-        }).eq("user_id", user.id);
+        await admin.from("engine_settings").update({ enabled: false, daily_paused_on: marketDate, updated_at: new Date().toISOString() }).eq("user_id", user.id);
         settings.enabled = false;
         settings.daily_paused_on = marketDate;
-        await admin.from("engine_decisions").insert({
-          user_id: user.id,
-          action: "STOP",
-          confidence: 100,
-          reason: `Automatic stop: the real paper account reached its ${settings.daily_loss_limit}% daily loss limit.`
-        });
+        await admin.from("engine_decisions").insert({ user_id: user.id, action: "STOP", confidence: 100, reason: `Automatic stop: the real paper account reached its ${settings.daily_loss_limit}% daily loss limit.` });
       }
     }
 
     if (runTradingCycle && settings.enabled) {
       const marketKey = Deno.env.get("TWELVE_DATA_API_KEY");
-      let decision = { symbol: null as string | null, action: "HOLD", confidence: 0, reason: "No eligible real-market signal.", quantity: null as number | null, broker_order_id: null as string | null };
+      let decision = {
+        symbol: null as string | null, action: "HOLD", confidence: 0,
+        reason: "No eligible multi-signal market setup.", quantity: null as number | null,
+        broker_order_id: null as string | null, score: 50, signals: {} as Record<string, unknown>,
+        reference_price: null as number | null, strategy_version: "ensemble-v2"
+      };
       if (!marketKey || !universe.length) {
         decision.reason = "Market-data key or approved instrument universe is not configured.";
       } else {
-        const candidate = universe[new Date().getUTCMinutes() % universe.length];
-        const marketResponse = await fetch(`https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(candidate.symbol)}&interval=5min&outputsize=30&apikey=${marketKey}`);
-        const market = await marketResponse.json();
-        const closes = (market.values || []).map((bar: { close: string }) => Number(bar.close)).filter(Number.isFinite);
-        const latestBarIsToday = String(market.values?.[0]?.datetime || "").startsWith(marketDate);
-        if (!latestBarIsToday) {
-          decision.reason = "US market data is not current, so no trade was allowed.";
-        } else if (closes.length >= 20) {
-          const average = (values: number[]) => values.reduce((a, b) => a + b, 0) / values.length;
-          const fast = average(closes.slice(0, 5));
-          const slow = average(closes.slice(0, 20));
-          const momentum = (fast / slow) - 1;
-          const confidence = Math.min(95, Math.round(60 + Math.abs(momentum) * 4000));
+        const fetchSeries = async (symbol: string, interval: "5min" | "1h", outputsize = 60): Promise<Bar[]> => {
+          const response = await fetch(`https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(symbol)}&interval=${interval}&outputsize=${outputsize}&apikey=${marketKey}`);
+          const payload = await response.json();
+          if (!response.ok || payload.status === "error") throw new Error(payload.message || `Market data failed for ${symbol}`);
+          return (payload.values || []).map((bar: Record<string, string>) => ({ datetime: bar.datetime, open: Number(bar.open), high: Number(bar.high), low: Number(bar.low), close: Number(bar.close), volume: Number(bar.volume || 0) })).filter((bar: Bar) => Number.isFinite(bar.close));
+        };
+        const benchmark = await fetchSeries("SPY", "1h");
+        const analyses = await Promise.all(universe.map(async instrument => {
+          const [shortBars, longBars] = await Promise.all([fetchSeries(instrument.symbol, "5min"), fetchSeries(instrument.symbol, "1h")]);
+          const held = positions.some((position: { ticker?: string }) => position.ticker === instrument.ticker);
+          const current = analyse(shortBars, longBars, benchmark, held);
+          const currentData = String(shortBars[0]?.datetime || "").startsWith(marketDate);
+          return { instrument, held, result: currentData ? current : { ...current, verdict: "HOLD" as const, confidence: 0, explanation: "No trade: the latest completed market bar is not from today." } };
+        }));
+        const sell = analyses.filter(item => item.held && item.result.verdict === "SELL").sort((a, b) => a.result.score - b.result.score)[0];
+        const buy = analyses.filter(item => !item.held && item.result.verdict === "BUY").sort((a, b) => b.result.score - a.result.score)[0];
+        const selected = sell || buy || [...analyses].sort((a, b) => Math.abs(b.result.score - 50) - Math.abs(a.result.score - 50))[0];
+        if (selected) {
+          const { instrument, held, result } = selected;
+          decision = { symbol: instrument.symbol, action: result.verdict, confidence: result.confidence, reason: result.explanation, quantity: null, broker_order_id: null, score: result.score, signals: result.signals, reference_price: result.referencePrice, strategy_version: "ensemble-v2" };
           const testCash = Number(settings.test_cash);
-          const maxValue = Number(settings.starting_balance) * (Number(settings.max_position_percent) / 100);
-          const held = positions.find((p: { ticker?: string }) => p.ticker === candidate.ticker);
-          decision = { symbol: candidate.symbol, action: "HOLD", confidence, reason: "Real five-minute momentum remained inside the trade threshold.", quantity: null, broker_order_id: null };
-          if (momentum > 0.002 && !held && testCash >= 1) {
-            const orderValue = Math.min(testCash, maxValue);
-            const quantity = Math.max(0.0001, Number((orderValue / fast).toFixed(4)));
-            const order = await broker("/equity/orders/market", { method: "POST", body: JSON.stringify({ ticker: candidate.ticker, quantity }) });
-            settings.test_cash = Math.max(0, testCash - (quantity * fast));
+          if (result.verdict === "BUY" && !held && testCash >= 1) {
+            const exposureCap = Number(settings.starting_balance) * (Number(settings.max_position_percent) / 100);
+            const intelligentSize = Number(settings.starting_balance) * (result.suggestedExposurePercent / 100);
+            const orderValue = Math.min(testCash, exposureCap, intelligentSize);
+            const quantity = Math.max(0.0001, Number((orderValue / result.referencePrice).toFixed(4)));
+            const order = await broker("/equity/orders/market", { method: "POST", body: JSON.stringify({ ticker: instrument.ticker, quantity }) });
+            settings.test_cash = Math.max(0, testCash - (quantity * result.referencePrice));
             await admin.from("engine_settings").update({ test_cash: settings.test_cash, updated_at: new Date().toISOString() }).eq("user_id", user.id);
-            decision = { symbol: candidate.symbol, action: "BUY", confidence, reason: "Real five-minute average moved above the twenty-period average while exposure remained below 20%.", quantity, broker_order_id: String(order?.id || "") };
-          } else if (momentum < -0.002 && held) {
-            const quantity = -Math.abs(Number(held.quantity));
-            const order = await broker("/equity/orders/market", { method: "POST", body: JSON.stringify({ ticker: candidate.ticker, quantity }) });
-            settings.test_cash = testCash + (Math.abs(quantity) * fast);
-            await admin.from("engine_settings").update({ test_cash: settings.test_cash, updated_at: new Date().toISOString() }).eq("user_id", user.id);
-            decision = { symbol: candidate.symbol, action: "SELL", confidence, reason: "Real short-term momentum moved below the exit threshold.", quantity, broker_order_id: String(order?.id || "") };
+            decision.quantity = quantity;
+            decision.broker_order_id = String(order?.id || "");
+          } else if (result.verdict === "SELL" && held) {
+            const heldPosition = positions.find((position: { ticker?: string }) => position.ticker === instrument.ticker);
+            const quantity = -Math.abs(Number(heldPosition?.quantity || 0));
+            if (quantity) {
+              const order = await broker("/equity/orders/market", { method: "POST", body: JSON.stringify({ ticker: instrument.ticker, quantity }) });
+              settings.test_cash = testCash + (Math.abs(quantity) * result.referencePrice);
+              await admin.from("engine_settings").update({ test_cash: settings.test_cash, updated_at: new Date().toISOString() }).eq("user_id", user.id);
+              decision.quantity = quantity;
+              decision.broker_order_id = String(order?.id || "");
+            }
           }
-        } else {
-          decision.reason = "The real market-data provider did not return enough completed price bars.";
         }
       }
       await admin.from("engine_decisions").insert({ user_id: user.id, ...decision });
       brokerPositions = await loadBrokerPositions(true);
-      ownedDecisions = (await admin.from("engine_decisions")
-        .select("symbol,action,quantity")
-        .eq("user_id", user.id)
-        .in("action", ["BUY", "SELL"])
-        .order("created_at", { ascending: true })).data || [];
+      ownedDecisions = (await admin.from("engine_decisions").select("symbol,action,quantity").eq("user_id", user.id).in("action", ["BUY", "SELL"]).order("created_at", { ascending: true })).data || [];
       positions = testPositions();
     }
 
     const investedValue = positionValue(positions);
     const currentValue = Number(settings.test_cash) + investedValue;
-    await admin.from("account_snapshots")
-      .delete()
-      .eq("user_id", user.id)
-      .gt("value", Number(settings.starting_balance) * 10);
+    await admin.from("account_snapshots").delete().eq("user_id", user.id).gt("value", Number(settings.starting_balance) * 10);
     if (currentValue > 0) await admin.from("account_snapshots").insert({ user_id: user.id, value: currentValue });
 
     const [decisions, snapshots] = await Promise.all([
@@ -244,26 +208,13 @@ Deno.serve(async (req) => {
       admin.from("account_snapshots").select("value,created_at").eq("user_id", user.id).order("created_at", { ascending: false }).limit(80)
     ]);
     return json({
-      connected: true,
-      mode: "Trading 212 Demo",
-      rateLimited,
-      enabled: settings.enabled,
-      autopilotEnabled: settings.autopilot_enabled,
-      marketOpen,
-      trialStartedAt: settings.trial_started_at,
-      trialEndsAt: settings.trial_ends_at,
-      lastBackgroundRun: settings.last_background_run,
-      dailyPaused: settings.daily_paused_on === marketDate,
-      cash: { free: Number(settings.test_cash) },
-      positions,
-      testAccount: { cash: Number(settings.test_cash), invested: investedValue, total: currentValue },
-      decisions: decisions.data || [],
-      snapshots: (snapshots.data || []).reverse(),
-      rules: {
-        startingBalance: Number(settings.starting_balance),
-        dailyLossLimit: Number(settings.daily_loss_limit),
-        maxPositionPercent: Number(settings.max_position_percent)
-      },
+      connected: true, mode: "Trading 212 Demo", rateLimited, enabled: settings.enabled,
+      autopilotEnabled: settings.autopilot_enabled, marketOpen, trialStartedAt: settings.trial_started_at,
+      trialEndsAt: settings.trial_ends_at, lastBackgroundRun: settings.last_background_run,
+      dailyPaused: settings.daily_paused_on === marketDate, cash: { free: Number(settings.test_cash) },
+      positions, testAccount: { cash: Number(settings.test_cash), invested: investedValue, total: currentValue },
+      decisions: decisions.data || [], snapshots: (snapshots.data || []).reverse(),
+      rules: { startingBalance: Number(settings.starting_balance), dailyLossLimit: Number(settings.daily_loss_limit), maxPositionPercent: Number(settings.max_position_percent) },
       updatedAt: new Date().toISOString()
     });
   } catch (error) {
