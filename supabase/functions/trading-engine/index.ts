@@ -247,6 +247,8 @@ Deno.serve(async (req) => {
       items.reduce((sum, position) => sum + Number(position.currentValue ?? Number(position.quantity || 0) * Number(position.currentPrice || 0)), 0);
 
     const runTradingCycle = settings.enabled && ["tick", "scheduled", "start"].includes(action);
+    const lastDeepScan = settings.last_deep_scan_at ? new Date(settings.last_deep_scan_at).getTime() : 0;
+    const deepScanDue = action === "start" || Date.now() - lastDeepScan >= 4.5 * 60_000;
 
     if (runTradingCycle) {
       const currentTotal = Number(settings.test_cash) + positionValue(positions);
@@ -272,7 +274,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    if (runTradingCycle && settings.enabled) {
+    if (runTradingCycle && settings.enabled && deepScanDue) {
       const marketKey = Deno.env.get("TWELVE_DATA_API_KEY");
       let decision = {
         symbol: null as string | null, action: "HOLD", confidence: 0,
@@ -406,6 +408,10 @@ Deno.serve(async (req) => {
         }
       }
       await admin.from("engine_decisions").insert({ user_id: user.id, ...decision });
+      settings.last_deep_scan_at = now.toISOString();
+      await admin.from("engine_settings").update({
+        last_deep_scan_at: now.toISOString()
+      }).eq("user_id", user.id);
       brokerPositions = await loadBrokerPositions(true);
       ownedDecisions = (await admin.from("engine_decisions")
         .select("symbol,action,quantity")
@@ -413,6 +419,19 @@ Deno.serve(async (req) => {
         .in("action", ["BUY", "SELL"])
         .order("created_at", { ascending: true })).data || [];
       positions = testPositions();
+    } else if (runTradingCycle && settings.enabled) {
+      await admin.from("engine_decisions").insert({
+        user_id: user.id,
+        action: "HOLD",
+        confidence: 0,
+        reason: "One-minute assessment complete: engine, cash, positions and loss controls checked. Waiting for the next completed five-minute market bar before issuing a new trade signal.",
+        score: 50,
+        signals: {
+          minuteRiskCheck: true,
+          nextDeepScanInSeconds: Math.max(0, Math.ceil(((lastDeepScan + 5 * 60_000) - Date.now()) / 1000))
+        },
+        strategy_version: "minute-risk-check-v1"
+      });
     }
 
     const investedValue = positionValue(positions);
@@ -437,6 +456,7 @@ Deno.serve(async (req) => {
       trialStartedAt: settings.trial_started_at,
       trialEndsAt: settings.trial_ends_at,
       lastBackgroundRun: settings.last_background_run,
+      lastDeepScanAt: settings.last_deep_scan_at || null,
       dailyPaused: settings.daily_paused_on === marketDate,
       scanner: {
         universeSize: universe.length,
