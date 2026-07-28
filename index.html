@@ -14,7 +14,7 @@
       <span class="brand-mark">JA</span><span>Jack <b>Auto Invest</b></span>
     </a>
     <div class="top-actions">
-      <span id="marketStatus" class="market-status"><i></i> Engine ready</span>
+      <span id="marketStatus" class="market-status"><i></i> Broker disconnected</span>
       <button id="menuButton" class="menu-button" type="button" aria-expanded="false" aria-controls="mainNav">Menu</button>
     </div>
     <nav id="mainNav" class="main-nav" aria-label="Main navigation">
@@ -31,7 +31,7 @@
         <div>
           <p class="eyebrow">Private paper-trading laboratory</p>
           <h1>£100 AI test account</h1>
-          <p>The engine treats the balance like real cash, but every order remains simulated.</p>
+          <p>Real market paper orders through a broker Demo account. No manufactured prices or returns.</p>
         </div>
         <div class="engine-controls">
           <button id="startEngine" class="button primary start-button" type="button"><span class="control-dot"></span>Start engine</button>
@@ -49,7 +49,7 @@
           </div>
           <div class="engine-state">
             <span id="engineLight"></span>
-            <div><b id="engineState">STOPPED</b><small id="engineMessage">Press Start to begin the paper test</small></div>
+            <div><b id="engineState">DISCONNECTED</b><small id="engineMessage">Complete the secure setup to connect</small></div>
           </div>
         </div>
 
@@ -91,7 +91,7 @@
 
     <section class="notice shell" aria-label="Important beta notice">
       <span>PAPER ONLY</span>
-      <p>Uses simulated prices and fake cash. It cannot connect to a broker, place real orders or guarantee a profit.</p>
+      <p>Demo orders only. Prices, fills and returns come from the connected paper broker; results can still differ from live trading.</p>
     </section>
 
     <section id="positions" class="section shell">
@@ -146,11 +146,18 @@
       <span class="pulse-icon">▶</span>
       <p class="eyebrow">Start paper engine</p>
       <h2 id="confirmTitle">Put the fake £100 to work?</h2>
-      <p>The test will create changing simulated prices, analyse signals and make paper buy and sell decisions. No real account is connected.</p>
+      <p id="confirmCopy">The secure paper broker must be connected before the engine can start.</p>
+      <div id="loginFields" class="login-fields">
+        <label for="ownerEmail">Owner email</label>
+        <input id="ownerEmail" type="email" autocomplete="email" placeholder="you@example.com">
+        <button id="sendLoginLink" class="button secondary" type="button">Email me a secure login link</button>
+        <small id="loginMessage">Only the approved owner email will be allowed to use the engine.</small>
+      </div>
       <div class="simulation-result"><span>Starting balance</span><strong>£100.00</strong><small>Your progress is saved on this device</small></div>
-      <button id="confirmStart" class="button primary" type="button">Start with fake £100</button>
+      <button id="confirmStart" class="button primary" type="button">Check connection</button>
     </div>
   </div>
+  <script src="config.js"></script>
   <script src="app.js" defer></script>
 </body>
 </html>
