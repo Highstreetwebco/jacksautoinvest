@@ -26,9 +26,9 @@
   }
   function portfolioNumbers(data) {
     const positions = Array.isArray(data?.positions) ? data.positions : [];
-    const invested = positions.reduce((sum, p) => sum + Number(p.currentValue ?? Number(p.quantity || 0) * Number(p.currentPrice || 0)), 0);
-    const free = Number(data?.cash?.free ?? data?.cash?.availableToTrade ?? 0);
-    const total = Number(data?.cash?.total ?? data?.cash?.result ?? free + invested);
+    const invested = Number(data?.testAccount?.invested || 0);
+    const free = Number(data?.testAccount?.cash || 0);
+    const total = Number(data?.testAccount?.total || free + invested);
     return { positions, invested, free, total };
   }
   function renderConnected() {
