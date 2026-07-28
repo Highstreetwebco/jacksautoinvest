@@ -1,0 +1,31 @@
+name: Background paper trading
+
+on:
+  schedule:
+    - cron: "*/5 13-22 * * 1-5"
+  workflow_dispatch:
+
+concurrency:
+  group: jack-auto-invest-paper-engine
+  cancel-in-progress: false
+
+jobs:
+  run-cycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Run secured paper-trading cycle
+        env:
+          CRON_SECRET: ${{ secrets.JAI_CRON_SECRET }}
+          SUPABASE_ANON_KEY: ${{ secrets.JAI_SUPABASE_ANON_KEY }}
+        run: |
+          test -n "$CRON_SECRET"
+          test -n "$SUPABASE_ANON_KEY"
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "Content-Type: application/json" \
+            --header "apikey: $SUPABASE_ANON_KEY" \
+            --header "Authorization: Bearer $SUPABASE_ANON_KEY" \
+            --header "x-cron-secret: $CRON_SECRET" \
+            --data '{"action":"scheduled"}' \
+            "https://wupecgimrmgmdzqvrkdr.supabase.co/functions/v1/trading-engine"
