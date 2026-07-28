@@ -48,8 +48,33 @@ Deno.serve(async (req) => {
       settings.enabled = enabled;
     }
 
-    let cash = await broker("/equity/account/cash");
-    let positions = await broker("/equity/portfolio");
+    const universe = JSON.parse(Deno.env.get("TRADING_UNIVERSE") || "[]") as Array<{ symbol: string; ticker: string }>;
+    let brokerPositions = await broker("/equity/portfolio");
+    let ownedDecisions = (await admin.from("engine_decisions")
+      .select("symbol,action,quantity")
+      .eq("user_id", user.id)
+      .in("action", ["BUY", "SELL"])
+      .order("created_at", { ascending: true })).data || [];
+    const testPositions = () => universe.flatMap(instrument => {
+      const ownedQuantity = ownedDecisions
+        .filter(decision => decision.symbol === instrument.symbol)
+        .reduce((total, decision) => total + Number(decision.quantity || 0), 0);
+      if (ownedQuantity <= 0) return [];
+      const brokerPosition = brokerPositions.find((position: { ticker?: string }) => position.ticker === instrument.ticker);
+      if (!brokerPosition) return [];
+      const brokerQuantity = Math.abs(Number(brokerPosition.quantity || 0));
+      const currentPrice = Number(brokerPosition.currentPrice || brokerPosition.averagePrice || 0);
+      const scaledPpl = brokerQuantity > 0 ? Number(brokerPosition.ppl || 0) * (ownedQuantity / brokerQuantity) : 0;
+      return [{
+        ...brokerPosition,
+        ticker: instrument.ticker,
+        quantity: ownedQuantity,
+        currentPrice,
+        currentValue: ownedQuantity * currentPrice,
+        ppl: scaledPpl
+      }];
+    });
+    let positions = testPositions();
     const positionValue = (items: Array<Record<string, unknown>>) =>
       items.reduce((sum, position) => sum + Number(position.currentValue ?? Number(position.quantity || 0) * Number(position.currentPrice || 0)), 0);
 
@@ -74,7 +99,6 @@ Deno.serve(async (req) => {
 
     if (action === "tick" && settings.enabled) {
       const marketKey = Deno.env.get("TWELVE_DATA_API_KEY");
-      const universe = JSON.parse(Deno.env.get("TRADING_UNIVERSE") || "[]") as Array<{ symbol: string; ticker: string }>;
       let decision = { symbol: null as string | null, action: "HOLD", confidence: 0, reason: "No eligible real-market signal.", quantity: null as number | null, broker_order_id: null as string | null };
       if (!marketKey || !universe.length) {
         decision.reason = "Market-data key or approved instrument universe is not configured.";
@@ -112,12 +136,21 @@ Deno.serve(async (req) => {
         }
       }
       await admin.from("engine_decisions").insert({ user_id: user.id, ...decision });
-      cash = await broker("/equity/account/cash");
-      positions = await broker("/equity/portfolio");
+      brokerPositions = await broker("/equity/portfolio");
+      ownedDecisions = (await admin.from("engine_decisions")
+        .select("symbol,action,quantity")
+        .eq("user_id", user.id)
+        .in("action", ["BUY", "SELL"])
+        .order("created_at", { ascending: true })).data || [];
+      positions = testPositions();
     }
 
     const investedValue = positionValue(positions);
     const currentValue = Number(settings.test_cash) + investedValue;
+    await admin.from("account_snapshots")
+      .delete()
+      .eq("user_id", user.id)
+      .gt("value", Number(settings.starting_balance) * 10);
     if (currentValue > 0) await admin.from("account_snapshots").insert({ user_id: user.id, value: currentValue });
 
     const [decisions, snapshots] = await Promise.all([
@@ -128,7 +161,7 @@ Deno.serve(async (req) => {
       connected: true,
       mode: "Trading 212 Demo",
       enabled: settings.enabled,
-      cash,
+      cash: { free: Number(settings.test_cash) },
       positions,
       testAccount: { cash: Number(settings.test_cash), invested: investedValue, total: currentValue },
       decisions: decisions.data || [],
