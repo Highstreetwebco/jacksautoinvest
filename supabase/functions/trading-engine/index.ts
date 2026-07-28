@@ -298,7 +298,7 @@ Deno.serve(async (req) => {
             volume: Number(bar.volume || 0)
           })).filter((bar: Bar) => Number.isFinite(bar.close));
         };
-        const scanSize = 5;
+        const scanSize = 4;
         const cursor = Number(settings.scan_cursor || 0) % universe.length;
         const rotating = Array.from({ length: Math.min(scanSize, universe.length) }, (_, offset) =>
           universe[(cursor + offset) % universe.length]);
@@ -319,11 +319,16 @@ Deno.serve(async (req) => {
             const bars = await fetchSeries(instrument.symbol, "5min");
             const newest = bars[0];
             const oldest = bars[Math.min(11, bars.length - 1)];
+            const held = heldInstruments.some(item => item.ticker === instrument.ticker);
+            if (!newest || !oldest || !String(newest.datetime || "").startsWith(marketDate)) return null;
             const normalVolume = bars.slice(1, 21).reduce((sum, bar) => sum + Number(bar.volume || 0), 0) /
               Math.max(1, bars.slice(1, 21).filter(bar => bar.volume).length);
-            const activity = oldest?.close
-              ? Math.abs(((newest.close / oldest.close) - 1) * 100) + (normalVolume ? (newest.volume / normalVolume) : 0)
-              : 0;
+            const momentum = oldest.close ? ((newest.close / oldest.close) - 1) * 100 : 0;
+            const volumeRatio = normalVolume ? newest.volume / normalVolume : 0;
+            if (!held && (newest.close < 1 || normalVolume < 10_000 || momentum <= 0)) return null;
+            const source = candidateSources.get(instrument.symbol.toUpperCase()) || "";
+            const sourceBonus = source.includes("gainers") ? 3 : source.includes("unusual") ? 2 : source ? 1 : 0;
+            const activity = held ? 100 + Math.abs(momentum) : (momentum * 3) + Math.min(volumeRatio, 4) + sourceBonus;
             return { instrument, bars, activity };
           } catch {
             return null;
@@ -335,7 +340,7 @@ Deno.serve(async (req) => {
             const bHeld = heldInstruments.some(item => item.ticker === b.instrument.ticker) ? 1 : 0;
             return (bHeld - aHeld) || (b.activity - a.activity);
           })
-          .slice(0, 2);
+          .slice(0, 3);
         const benchmark = await fetchSeries("SPY", "1h");
         const analyses = await Promise.all(deepCandidates.map(async candidate => {
           const { instrument, bars: shortBars } = candidate;
@@ -381,7 +386,7 @@ Deno.serve(async (req) => {
               candidatesDeepAnalysed: deepCandidates.length
             },
             reference_price: result.referencePrice,
-            strategy_version: "public-intelligence-v4"
+            strategy_version: "opportunity-engine-v5"
           };
           const testCash = Number(settings.test_cash);
           if (result.verdict === "BUY" && !held && testCash >= 1) {
