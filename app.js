@@ -87,12 +87,16 @@
     if (!email) { $("#loginMessage").textContent = "Enter your email address first."; return; }
     const button = $("#sendLoginLink"); button.disabled = true;
     try {
-      const response = await fetch(`${cfg.supabaseUrl}/auth/v1/otp`, {
+      const returnUrl = "https://jtroth1997.github.io/jacksautoinvest/";
+      const response = await fetch(`${cfg.supabaseUrl}/auth/v1/otp?redirect_to=${encodeURIComponent(returnUrl)}`, {
         method: "POST",
         headers: { apikey: cfg.supabaseAnonKey, Authorization: `Bearer ${cfg.supabaseAnonKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ email, options: { emailRedirectTo: location.href.split("#")[0] } })
+        body: JSON.stringify({ email, create_user: true })
       });
-      if (!response.ok) throw new Error("The secure login email could not be sent.");
+      if (!response.ok) {
+        const details = await response.json().catch(() => ({}));
+        throw new Error(details.msg || details.message || details.error_description || "The secure login email could not be sent.");
+      }
       $("#loginMessage").textContent = "Login link sent. Open it on this device, then return here.";
     } catch (error) { $("#loginMessage").textContent = error.message; }
     finally { button.disabled = false; }
