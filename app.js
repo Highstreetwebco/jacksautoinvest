@@ -45,7 +45,8 @@
   }
   function renderConnected() {
     const { positions, invested, free, total } = portfolioNumbers(brokerState);
-    const gain = total - 100;
+    const startingBalance = Number(brokerState.rules?.startingBalance || 500);
+    const gain = total - startingBalance;
     const systemRunning = Boolean(brokerState.autopilotEnabled);
     $("#marketStatus").innerHTML = `<i></i> ${brokerState.marketOpen ? "US market open" : "US market closed"} · Broker connected`;
     $("#engineState").textContent = systemRunning ? "RUNNING" : "STOPPED";
