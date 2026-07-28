@@ -11,31 +11,20 @@
 
   async function refreshSession() {
     if (!session?.refresh_token || !configured()) return false;
-    const response = await fetch(`${cfg.supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
-      method: "POST",
-      headers: { apikey: cfg.supabaseAnonKey, "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: session.refresh_token })
-    });
+    const response = await fetch(`${cfg.supabaseUrl}/auth/v1/token?grant_type=refresh_token`, { method: "POST", headers: { apikey: cfg.supabaseAnonKey, "Content-Type": "application/json" }, body: JSON.stringify({ refresh_token: session.refresh_token }) });
     if (!response.ok) return false;
     session = await response.json();
     localStorage.setItem(SESSION_KEY, JSON.stringify(session));
     return true;
   }
-
   async function broker(action = "status") {
     if (!configured() || !session?.access_token) throw new Error("Secure connection setup required");
-    const response = await fetch(`${cfg.supabaseUrl}/functions/v1/trading-engine`, {
-      method: action === "status" ? "GET" : "POST", headers: headers(),
-      body: action === "status" ? undefined : JSON.stringify({ action })
-    });
+    const response = await fetch(`${cfg.supabaseUrl}/functions/v1/trading-engine`, { method: action === "status" ? "GET" : "POST", headers: headers(), body: action === "status" ? undefined : JSON.stringify({ action }) });
     const data = await response.json();
     if (!response.ok || data.error || data.setupRequired) throw new Error(data.error || "Broker credentials are not configured");
     return data;
   }
-  async function refresh() {
-    try { brokerState = await broker(); renderConnected(); }
-    catch (error) { renderDisconnected(error.message); }
-  }
+  async function refresh() { try { brokerState = await broker(); renderConnected(); } catch (error) { renderDisconnected(error.message); } }
   function portfolioNumbers(data) {
     const positions = Array.isArray(data?.positions) ? data.positions : [];
     const invested = Number(data?.testAccount?.invested || 0);
@@ -48,9 +37,7 @@
     const gain = total - 100;
     $("#marketStatus").innerHTML = `<i></i> Trading 212 Demo connected`;
     $("#engineState").textContent = brokerState.enabled ? "RUNNING" : brokerState.autopilotEnabled ? "WAITING" : "STOPPED";
-    $("#engineMessage").textContent = brokerState.enabled
-      ? "Background paper engine active"
-      : brokerState.autopilotEnabled ? "Automatic start at the next market open" : "Paper broker connected and ready";
+    $("#engineMessage").textContent = brokerState.enabled ? "Background paper engine active" : brokerState.autopilotEnabled ? "Automatic start at the next market open" : "Paper broker connected and ready";
     $("#engineLight").classList.toggle("running", brokerState.enabled);
     $("#startEngine").disabled = brokerState.autopilotEnabled; $("#stopEngine").disabled = !brokerState.autopilotEnabled;
     $("#portfolioValue").textContent = money(total);
@@ -61,12 +48,17 @@
     $("#tradeCount").textContent = String(brokerState.decisions?.filter(d => d.action !== "HOLD").length || 0);
     $("#chartCaption").textContent = brokerState.enabled ? "LIVE BACKGROUND TEST" : brokerState.autopilotEnabled ? "WAITING FOR MARKET" : "ENGINE STOPPED";
     $("#lastUpdated").textContent = `Broker synced ${new Date(brokerState.updatedAt).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}`;
-    $("#analysisText").textContent = brokerState.enabled
-      ? "Automatic secured market cycles are running in the background."
-      : brokerState.autopilotEnabled ? "The one-month test is armed and will resume automatically." : "Connected—press Start when ready";
+    $("#analysisText").textContent = brokerState.enabled ? "Automatic secured market cycles are running in the background." : brokerState.autopilotEnabled ? "The one-month test is armed and will resume automatically." : "Connected—press Start when ready";
     renderChart(brokerState.snapshots || []);
     $("#positionGrid").innerHTML = positions.length ? positions.map(p => `<article class="position-card"><div><span class="ticker">${p.ticker || p.instrument?.ticker || "POSITION"}</span><small>Trading 212 Demo</small></div><strong>${money(p.currentValue ?? Number(p.quantity || 0) * Number(p.currentPrice || 0))}</strong><div class="position-meta"><span>${Number(p.quantity || 0).toFixed(4)} units</span><b>${money(p.ppl || 0)}</b></div></article>`).join("") : `<article class="empty-state"><span>◎</span><h3>No open paper positions</h3><p>The connected Demo account currently holds cash.</p></article>`;
     const decisions = brokerState.decisions || [];
+    const latest = decisions[0];
+    const latestSignals = latest?.signals || {};
+    $("#trendSignal").textContent = latestSignals.hourlyTrendPercent == null ? "—" : `${Number(latestSignals.hourlyTrendPercent) >= 0 ? "↑" : "↓"} ${Math.abs(Number(latestSignals.hourlyTrendPercent)).toFixed(2)}%`;
+    $("#sentimentSignal").textContent = latestSignals.riskOff == null ? "—" : latestSignals.riskOff ? "Risk off" : "Supportive";
+    $("#confidenceSignal").textContent = latest?.confidence == null ? "—" : `${latest.confidence}%`;
+    $("#decisionTitle").textContent = latest ? `${latest.action} ${latest.symbol || ""}`.trim() : "Standing by";
+    $("#decisionReason").textContent = latest?.reason || "The multi-signal engine is waiting for its first complete market analysis.";
     $("#activityList").innerHTML = decisions.length ? decisions.map(d => `<article><span class="trade-icon ${d.action.toLowerCase()}">${d.action[0]}</span><div><strong>${d.action} · ${d.symbol || "Engine"}</strong><small>${d.reason}</small></div><div><b>${d.quantity ? `${d.quantity} units` : "No order"}</b><small>${new Date(d.created_at).toLocaleString("en-GB")}</small></div></article>`).join("") : `<article class="feed-placeholder"><span class="trade-icon hold">—</span><div><strong>No broker decisions yet</strong><small>Real paper orders will appear here after the engine starts.</small></div></article>`;
   }
   function renderChart(snapshots) {
@@ -87,9 +79,8 @@
   }
   async function changeEngine(action) {
     const button = action === "start" ? $("#confirmStart") : $("#stopEngine"); button.disabled = true;
-    try {
-      brokerState = await broker(action); $("#confirmPanel").hidden = true; document.body.style.overflow = ""; renderConnected();
-    } catch (error) { $("#confirmCopy").textContent = error.message; renderDisconnected(error.message); }
+    try { brokerState = await broker(action); $("#confirmPanel").hidden = true; document.body.style.overflow = ""; renderConnected(); }
+    catch (error) { $("#confirmCopy").textContent = error.message; renderDisconnected(error.message); }
     finally { button.disabled = false; }
   }
   async function signIn() {
@@ -97,61 +88,36 @@
     const password = $("#ownerPassword").value;
     const message = $("#loginMessage");
     const button = $("#signInButton");
-    if (!configured()) { $("#loginMessage").textContent = "Supabase has not been connected yet."; return; }
-    if (!email || !password) { $("#loginMessage").textContent = "Enter your email and password."; return; }
-    button.disabled = true;
-    button.textContent = "Signing in…";
-    message.textContent = "Securely checking your account…";
+    if (!configured()) { message.textContent = "Supabase has not been connected yet."; return; }
+    if (!email || !password) { message.textContent = "Enter your email and password."; return; }
+    button.disabled = true; button.textContent = "Signing in…"; message.textContent = "Securely checking your account…";
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 12000);
     try {
-      const response = await fetch(`${cfg.supabaseUrl}/auth/v1/token?grant_type=password`, {
-        method: "POST",
-        headers: { apikey: cfg.supabaseAnonKey, "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-        signal: controller.signal
-      });
+      const response = await fetch(`${cfg.supabaseUrl}/auth/v1/token?grant_type=password`, { method: "POST", headers: { apikey: cfg.supabaseAnonKey, "Content-Type": "application/json" }, body: JSON.stringify({ email, password }), signal: controller.signal });
       const details = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(details.msg || details.message || details.error_description || "Sign in failed.");
-      }
+      if (!response.ok) throw new Error(details.msg || details.message || details.error_description || "Sign in failed.");
       session = details;
       localStorage.setItem(SESSION_KEY, JSON.stringify(session));
       message.textContent = "Signed in securely.";
-      $("#loginFields").hidden = true;
-      $("#confirmStart").hidden = false;
+      $("#loginFields").hidden = true; $("#confirmStart").hidden = false;
       await refresh();
-    } catch (error) {
-      message.textContent = error.name === "AbortError"
-        ? "Supabase took too long to respond. Check your connection and try again."
-        : error.message || "Sign in failed. Please try again.";
-    } finally {
-      clearTimeout(timeout);
-      button.disabled = false;
-      button.textContent = "Sign in securely";
-    }
+    } catch (error) { message.textContent = error.name === "AbortError" ? "Supabase took too long to respond. Check your connection and try again." : error.message || "Sign in failed. Please try again."; }
+    finally { clearTimeout(timeout); button.disabled = false; button.textContent = "Sign in securely"; }
   }
   $("#menuButton").addEventListener("click", () => { const open = $("#mainNav").classList.toggle("open"); $("#menuButton").setAttribute("aria-expanded", String(open)); });
   $("#mainNav").querySelectorAll("a").forEach(a => a.addEventListener("click", () => $("#mainNav").classList.remove("open")));
   $("#startEngine").addEventListener("click", () => {
-    $("#confirmCopy").textContent = configured() && session
-      ? "Start the one-month background test. It will run automatically whenever the US market is open—even when this website is closed."
-      : "The secure paper broker must be connected before the background test can start.";
+    $("#confirmCopy").textContent = configured() && session ? "Start the one-month background test. It will run automatically whenever the US market is open—even when this website is closed." : "The secure paper broker must be connected before the background test can start.";
     $("#confirmPanel").hidden = false; document.body.style.overflow = "hidden";
-    $("#loginFields").hidden = Boolean(session);
-    $("#confirmStart").hidden = !session;
+    $("#loginFields").hidden = Boolean(session); $("#confirmStart").hidden = !session;
   });
   $("#signInButton").addEventListener("click", signIn);
-  $("#ownerPassword").addEventListener("keydown", event => {
-    if (event.key === "Enter") signIn();
-  });
+  $("#ownerPassword").addEventListener("keydown", event => { if (event.key === "Enter") signIn(); });
   $("#confirmStart").addEventListener("click", () => changeEngine("start"));
   $("#stopEngine").addEventListener("click", () => changeEngine("stop"));
   $("#closeConfirm").addEventListener("click", () => { $("#confirmPanel").hidden = true; document.body.style.overflow = ""; });
   $("#resetAccount").addEventListener("click", refresh);
-  if (configured() && session) {
-    refreshSession().then(ok => ok ? refresh() : renderDisconnected("Please sign in again"));
-  } else {
-    renderDisconnected();
-  }
+  if (configured() && session) refreshSession().then(ok => ok ? refresh() : renderDisconnected("Please sign in again"));
+  else renderDisconnected();
 })();
