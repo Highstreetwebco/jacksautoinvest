@@ -10,6 +10,19 @@
   const configured = () => Boolean(cfg.supabaseUrl && cfg.supabaseAnonKey);
   const headers = () => ({ apikey: cfg.supabaseAnonKey, Authorization: `Bearer ${session?.access_token || cfg.supabaseAnonKey}`, "Content-Type": "application/json" });
 
+  async function refreshSession() {
+    if (!session?.refresh_token || !configured()) return false;
+    const response = await fetch(`${cfg.supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
+      method: "POST",
+      headers: { apikey: cfg.supabaseAnonKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: session.refresh_token })
+    });
+    if (!response.ok) return false;
+    session = await response.json();
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    return true;
+  }
+
   async function broker(action = "status") {
     if (!configured() || !session?.access_token) throw new Error("Secure connection setup required");
     const response = await fetch(`${cfg.supabaseUrl}/functions/v1/trading-engine`, {
@@ -81,30 +94,30 @@
     } catch (error) { $("#confirmCopy").textContent = error.message; renderDisconnected(error.message); }
     finally { button.disabled = false; }
   }
-  async function sendLoginLink() {
+  async function signIn() {
     const email = $("#ownerEmail").value.trim();
+    const password = $("#ownerPassword").value;
     if (!configured()) { $("#loginMessage").textContent = "Supabase has not been connected yet."; return; }
-    if (!email) { $("#loginMessage").textContent = "Enter your email address first."; return; }
-    const button = $("#sendLoginLink"); button.disabled = true;
+    if (!email || !password) { $("#loginMessage").textContent = "Enter your email and password."; return; }
+    const button = $("#signInButton"); button.disabled = true;
     try {
-      const returnUrl = "https://jtroth1997.github.io/jacksautoinvest/";
-      const response = await fetch(`${cfg.supabaseUrl}/auth/v1/otp?redirect_to=${encodeURIComponent(returnUrl)}`, {
+      const response = await fetch(`${cfg.supabaseUrl}/auth/v1/token?grant_type=password`, {
         method: "POST",
-        headers: { apikey: cfg.supabaseAnonKey, Authorization: `Bearer ${cfg.supabaseAnonKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ email, create_user: true })
+        headers: { apikey: cfg.supabaseAnonKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password })
       });
       if (!response.ok) {
         const details = await response.json().catch(() => ({}));
-        throw new Error(details.msg || details.message || details.error_description || "The secure login email could not be sent.");
+        throw new Error(details.msg || details.message || details.error_description || "Sign in failed.");
       }
-      $("#loginMessage").textContent = "Login link sent. Open it on this device, then return here.";
+      session = await response.json();
+      localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+      $("#loginMessage").textContent = "Signed in securely.";
+      $("#loginFields").hidden = true;
+      $("#confirmStart").hidden = false;
+      await refresh();
     } catch (error) { $("#loginMessage").textContent = error.message; }
     finally { button.disabled = false; }
-  }
-  const hash = new URLSearchParams(location.hash.replace(/^#/, ""));
-  if (hash.get("access_token")) {
-    session = { access_token: hash.get("access_token"), refresh_token: hash.get("refresh_token") };
-    localStorage.setItem(SESSION_KEY, JSON.stringify(session)); history.replaceState(null, "", location.pathname);
   }
   $("#menuButton").addEventListener("click", () => { const open = $("#mainNav").classList.toggle("open"); $("#menuButton").setAttribute("aria-expanded", String(open)); });
   $("#mainNav").querySelectorAll("a").forEach(a => a.addEventListener("click", () => $("#mainNav").classList.remove("open")));
@@ -114,10 +127,14 @@
     $("#loginFields").hidden = Boolean(session);
     $("#confirmStart").hidden = !session;
   });
-  $("#sendLoginLink").addEventListener("click", sendLoginLink);
+  $("#signInButton").addEventListener("click", signIn);
   $("#confirmStart").addEventListener("click", () => changeEngine("start"));
   $("#stopEngine").addEventListener("click", () => changeEngine("stop"));
   $("#closeConfirm").addEventListener("click", () => { $("#confirmPanel").hidden = true; document.body.style.overflow = ""; });
   $("#resetAccount").addEventListener("click", refresh);
-  configured() && session ? refresh() : renderDisconnected();
+  if (configured() && session) {
+    refreshSession().then(ok => ok ? refresh() : renderDisconnected("Please sign in again"));
+  } else {
+    renderDisconnected();
+  }
 })();
