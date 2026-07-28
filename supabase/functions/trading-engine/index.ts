@@ -134,6 +134,66 @@ Deno.serve(async (req) => {
         universe = configuredUniverse;
       }
     }
+    type PublicCandidate = { symbol: string; source: string };
+    let publicCandidates = Array.isArray(settings.public_candidates)
+      ? settings.public_candidates as PublicCandidate[]
+      : [];
+    const publicCacheAge = settings.public_candidates_updated_at
+      ? Date.now() - new Date(settings.public_candidates_updated_at).getTime()
+      : Number.POSITIVE_INFINITY;
+    if (marketOpen && settings.autopilot_enabled && publicCacheAge >= 30 * 60_000) {
+      const publicPages = [
+        {
+          source: "TradingView most active",
+          url: "https://www.tradingview.com/markets/stocks-usa/market-movers-active/",
+          pattern: /\/symbols\/(?:NASDAQ|NYSE|AMEX|NYSEARCA)-([A-Z0-9.-]{1,10})\//g
+        },
+        {
+          source: "TradingView unusual volume",
+          url: "https://www.tradingview.com/markets/stocks-usa/market-movers-unusual-volume/",
+          pattern: /\/symbols\/(?:NASDAQ|NYSE|AMEX|NYSEARCA)-([A-Z0-9.-]{1,10})\//g
+        },
+        {
+          source: "TradingView gainers",
+          url: "https://www.tradingview.com/markets/stocks-usa/market-movers-gainers/",
+          pattern: /\/symbols\/(?:NASDAQ|NYSE|AMEX|NYSEARCA)-([A-Z0-9.-]{1,10})\//g
+        },
+        {
+          source: "Yahoo Finance most active",
+          url: "https://finance.yahoo.com/markets/stocks/most-active/",
+          pattern: /\/quote\/([A-Z][A-Z0-9.-]{0,9})(?:\/|\?)/g
+        }
+      ];
+      const fetched = (await Promise.all(publicPages.map(async page => {
+        try {
+          const response = await fetch(page.url, {
+            headers: { "User-Agent": "JackAutoInvest/1.0 private-paper-research" },
+            signal: AbortSignal.timeout(6_000)
+          });
+          if (!response.ok) return [];
+          const html = await response.text();
+          return [...html.matchAll(page.pattern)].map(match => ({
+            symbol: match[1].toUpperCase(),
+            source: page.source
+          }));
+        } catch {
+          return [];
+        }
+      }))).flat();
+      const tradableSymbols = new Set(universe.map(instrument => instrument.symbol.toUpperCase()));
+      const unique = [...new Map(fetched
+        .filter(candidate => tradableSymbols.has(candidate.symbol))
+        .map(candidate => [candidate.symbol, candidate])).values()].slice(0, 100);
+      if (unique.length) {
+        publicCandidates = unique;
+        settings.public_candidates = unique;
+        settings.public_candidates_updated_at = now.toISOString();
+        await admin.from("engine_settings").update({
+          public_candidates: unique,
+          public_candidates_updated_at: now.toISOString()
+        }).eq("user_id", user.id);
+      }
+    }
     let rateLimited = false;
     const loadBrokerPositions = async (force = false) => {
       const cachedAt = settings.broker_cache_updated_at ? new Date(settings.broker_cache_updated_at).getTime() : 0;
@@ -218,7 +278,7 @@ Deno.serve(async (req) => {
         symbol: null as string | null, action: "HOLD", confidence: 0,
         reason: "No eligible multi-signal market setup.", quantity: null as number | null,
         broker_order_id: null as string | null, score: 50, signals: {} as Record<string, unknown>,
-        reference_price: null as number | null, strategy_version: "market-scanner-v3"
+        reference_price: null as number | null, strategy_version: "public-intelligence-v4"
       };
       if (!marketKey || !universe.length) {
         decision.reason = "Market-data key or approved instrument universe is not configured.";
@@ -242,7 +302,15 @@ Deno.serve(async (req) => {
           universe[(cursor + offset) % universe.length]);
         const heldInstruments = universe.filter(instrument =>
           positions.some((position: { ticker?: string }) => position.ticker === instrument.ticker));
-        const scanUniverse = [...new Map([...heldInstruments, ...rotating].map(instrument =>
+        const candidateOffset = publicCandidates.length ? cursor % publicCandidates.length : 0;
+        const nominatedSymbols = Array.from({ length: Math.min(3, publicCandidates.length) }, (_, offset) =>
+          publicCandidates[(candidateOffset + offset) % publicCandidates.length]);
+        const nominatedInstruments = nominatedSymbols.flatMap(candidate => {
+          const instrument = universe.find(item => item.symbol.toUpperCase() === candidate.symbol);
+          return instrument ? [instrument] : [];
+        });
+        const candidateSources = new Map(publicCandidates.map(candidate => [candidate.symbol, candidate.source]));
+        const scanUniverse = [...new Map([...heldInstruments, ...nominatedInstruments, ...rotating].map(instrument =>
           [instrument.ticker, instrument])).values()].slice(0, scanSize);
         const shortCandidates = (await Promise.all(scanUniverse.map(async instrument => {
           try {
@@ -296,18 +364,22 @@ Deno.serve(async (req) => {
             symbol: instrument.symbol,
             action: result.verdict,
             confidence: result.confidence,
-            reason: result.explanation,
+            reason: candidateSources.has(instrument.symbol.toUpperCase())
+              ? `Candidate nominated by ${candidateSources.get(instrument.symbol.toUpperCase())}; ${result.explanation}`
+              : result.explanation,
             quantity: null,
             broker_order_id: null,
             score: result.score,
             signals: {
               ...result.signals,
               marketUniverseSize: universe.length,
+              publicCandidatesAvailable: publicCandidates.length,
+              candidateSource: candidateSources.get(instrument.symbol.toUpperCase()) || "Rotating Trading 212 universe",
               candidatesScanned: scanUniverse.length,
               candidatesDeepAnalysed: deepCandidates.length
             },
             reference_price: result.referencePrice,
-            strategy_version: "market-scanner-v3"
+            strategy_version: "public-intelligence-v4"
           };
           const testCash = Number(settings.test_cash);
           if (result.verdict === "BUY" && !held && testCash >= 1) {
@@ -368,6 +440,8 @@ Deno.serve(async (req) => {
       dailyPaused: settings.daily_paused_on === marketDate,
       scanner: {
         universeSize: universe.length,
+        publicCandidates: publicCandidates.length,
+        publicCandidatesUpdatedAt: settings.public_candidates_updated_at || null,
         cursor: Number(settings.scan_cursor || 0),
         candidatesPerCycle: 5,
         mode: "rotating-market-scan"
