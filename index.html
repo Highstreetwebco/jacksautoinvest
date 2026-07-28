@@ -2,78 +2,130 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#07130f">
   <meta name="description" content="Jack Auto Invest — private £100 paper-trading lab">
-  <meta name="theme-color" content="#06140f">
   <title>Jack Auto Invest</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="#top" aria-label="Jack Auto Invest home"><span class="brand-mark">JA</span><span>Jack <b>Auto Invest</b></span></a>
-    <button id="menuButton" class="menu-button" type="button" aria-expanded="false" aria-controls="mainNav">Menu</button>
+    <a class="brand" href="#top" aria-label="Jack Auto Invest home">
+      <span class="brand-mark">JA</span><span>Jack <b>Auto Invest</b></span>
+    </a>
+    <div class="top-actions">
+      <span id="marketStatus" class="market-status"><i></i> Broker disconnected</span>
+      <button id="menuButton" class="menu-button" type="button" aria-expanded="false" aria-controls="mainNav">Menu</button>
+    </div>
     <nav id="mainNav" class="main-nav" aria-label="Main navigation">
-      <a class="active" href="#dashboard">Dashboard</a><a href="#positions">Positions</a><a href="#activity">Activity</a><a href="#safety">Safety</a>
+      <a class="active" href="#dashboard">Live test</a>
+      <a href="#positions">Positions</a>
+      <a href="#activity">Trades</a>
+      <a href="#safety">Safety</a>
     </nav>
-    <div class="top-actions"><span id="marketStatus" class="market-status"><i></i> Market data offline</span></div>
   </header>
 
   <main id="top">
     <section id="dashboard" class="trading-dashboard shell">
       <div class="dashboard-heading">
-        <div><p class="eyebrow">Private paper-trading lab</p><h1>AI test account</h1><p>Real market data through a broker Demo account. No real money is used.</p></div>
+        <div>
+          <p class="eyebrow">Private paper-trading laboratory</p>
+          <h1>£100 AI test account</h1>
+          <p>Real market paper orders through a broker Demo account. No manufactured prices or returns.</p>
+        </div>
         <div class="engine-controls">
-          <button id="startEngine" class="button primary" type="button"><span class="control-dot"></span>Start engine</button>
+          <button id="startEngine" class="button primary start-button" type="button"><span class="control-dot"></span>Start engine</button>
           <button id="stopEngine" class="button danger" type="button" disabled>Stop</button>
-          <button id="resetAccount" class="icon-button" type="button" title="Refresh broker data" aria-label="Refresh broker data">↻</button>
+          <button id="resetAccount" class="icon-button" type="button" title="Reset paper account" aria-label="Reset paper account">↻</button>
         </div>
       </div>
 
-      <article class="terminal-card">
+      <section class="terminal-card" aria-label="Live paper portfolio">
         <div class="value-row">
-          <div><span class="label">LIVE PAPER VALUE</span><strong id="portfolioValue">£100.00</strong><span id="totalReturn" class="return flat">£0.00 · 0.00%</span></div>
-          <div class="engine-state"><span id="engineLight"></span><div><b id="engineState">DISCONNECTED</b><small id="engineMessage">Secure connection setup required</small></div></div>
+          <div>
+            <span class="label">LIVE PORTFOLIO VALUE</span>
+            <strong id="portfolioValue">£100.00</strong>
+            <span id="totalReturn" class="return flat">£0.00 · 0.00%</span>
+          </div>
+          <div class="engine-state">
+            <span id="engineLight"></span>
+            <div><b id="engineState">DISCONNECTED</b><small id="engineMessage">Complete the secure setup to connect</small></div>
+          </div>
         </div>
-        <div class="live-chart">
-          <div class="live-indicator"><i></i><span id="chartCaption">NO MARKET DATA</span></div>
-          <svg viewBox="0 0 900 300" role="img" aria-label="Paper portfolio value chart">
-            <defs><linearGradient id="liveFill" x1="0" x2="0" y1="0" y2="1"><stop stop-color="#59e6a7" stop-opacity=".32"/><stop offset="1" stop-color="#59e6a7" stop-opacity="0"/></linearGradient></defs>
-            <g class="chart-grid"><line x1="0" x2="900" y1="60" y2="60"/><line x1="0" x2="900" y1="150" y2="150"/><line x1="0" x2="900" y1="240" y2="240"/></g>
-            <path id="chartArea" class="chart-area" d="M0 232 C100 218 130 230 210 210 C300 186 330 202 405 172 C505 135 545 150 620 112 C710 70 758 104 900 48 L900 300 L0 300Z"/>
-            <path id="chartLine" class="chart-line" d="M0 232 C100 218 130 230 210 210 C300 186 330 202 405 172 C505 135 545 150 620 112 C710 70 758 104 900 48"/>
-            <circle id="chartPoint" cx="900" cy="48" r="7"/>
-          </svg>
-        </div>
-        <div class="account-stats">
-          <div><span>Cash available</span><strong id="cashValue">£100.00</strong></div><div><span>Invested</span><strong id="investedValue">£0.00</strong></div><div><span>Today</span><strong id="todayChange">£0.00</strong></div><div><span>Trades made</span><strong id="tradeCount">0</strong></div>
-        </div>
-      </article>
 
-      <div class="signal-strip">
+        <div class="live-chart" aria-label="Live portfolio value chart">
+          <svg id="portfolioChart" viewBox="0 0 900 300" role="img" aria-label="Portfolio value over time" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="liveFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#59e6a7" stop-opacity=".35"/>
+                <stop offset="100%" stop-color="#59e6a7" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <g class="chart-grid">
+              <line x1="0" y1="30" x2="900" y2="30"/><line x1="0" y1="110" x2="900" y2="110"/>
+              <line x1="0" y1="190" x2="900" y2="190"/><line x1="0" y1="270" x2="900" y2="270"/>
+            </g>
+            <path id="chartArea" class="chart-area" d="M0 150 L900 150 L900 300 L0 300 Z"/>
+            <path id="chartLine" class="chart-line" d="M0 150 L900 150"/>
+            <circle id="chartPoint" cx="900" cy="150" r="7"/>
+          </svg>
+          <div class="live-indicator"><i></i><span id="chartCaption">WAITING FOR START</span></div>
+        </div>
+
+        <div class="account-stats">
+          <div><span>Available cash</span><strong id="cashValue">£100.00</strong></div>
+          <div><span>Currently invested</span><strong id="investedValue">£0.00</strong></div>
+          <div><span>Today’s change</span><strong id="todayChange">£0.00</strong></div>
+          <div><span>Trades made</span><strong id="tradeCount">0</strong></div>
+        </div>
+      </section>
+
+      <section class="signal-strip" aria-label="AI market analysis">
         <div class="brain"><span>AI</span><i id="brainPulse"></i></div>
-        <div class="signal-copy"><span>ENGINE ANALYSIS</span><strong id="analysisText">Waiting for Trading 212 Demo and Supabase…</strong></div>
-        <div class="signal"><span>Risk mode</span><b>Controlled</b></div><div class="signal"><span>Max position</span><b>20%</b></div><div class="signal"><span id="lastUpdated">Not connected</span><b>Secured</b></div>
-      </div>
+        <div class="signal-copy"><span>ENGINE THINKING</span><strong id="analysisText">Waiting to analyse the market…</strong></div>
+        <div class="signal"><span>Trend</span><b id="trendSignal">—</b></div>
+        <div class="signal"><span>Sentiment</span><b id="sentimentSignal">—</b></div>
+        <div class="signal"><span>Confidence</span><b id="confidenceSignal">—</b></div>
+      </section>
+    </section>
+
+    <section class="notice shell" aria-label="Important beta notice">
+      <span>PAPER ONLY</span>
+      <p>Demo orders only. Prices, fills and returns come from the connected paper broker; results can still differ from live trading.</p>
     </section>
 
     <section id="positions" class="section shell">
-      <div class="section-heading"><div><p class="eyebrow">Open holdings</p><h2>Paper positions</h2></div><span class="updated">Trading 212 Demo</span></div>
-      <div id="positionGrid" class="position-grid"><article class="empty-state"><span>◎</span><h3>No open paper positions</h3><p>Connect and start the engine to begin using real market data.</p></article></div>
+      <div class="section-heading">
+        <div><p class="eyebrow">Where the £100 is now</p><h2>Live positions</h2></div>
+        <span id="lastUpdated" class="updated">Not started</span>
+      </div>
+      <div id="positionGrid" class="position-grid">
+        <article class="empty-state"><span>◎</span><h3>No open positions</h3><p>Start the engine and it will only buy when its rules identify a suitable paper trade.</p></article>
+      </div>
     </section>
 
     <section id="activity" class="section shell split">
       <div>
-        <div class="section-heading"><div><p class="eyebrow">Decision log</p><h2>Engine activity</h2></div><button id="refreshActivity" class="text-button" type="button">Refresh</button></div>
-        <div id="activityList" class="activity-list"><article class="feed-placeholder"><span class="trade-icon hold">—</span><div><strong>No broker decisions yet</strong><small>Real paper orders will appear here after the engine starts.</small></div></article></div>
+        <div class="section-heading"><div><p class="eyebrow">Every decision recorded</p><h2>Live trade feed</h2></div><span class="updated">Newest first</span></div>
+        <div id="activityList" class="activity-list">
+          <article class="feed-placeholder"><span class="trade-icon hold">—</span><div><strong>The engine has not traded yet</strong><small>Its first decision will appear here with a clear reason.</small></div></article>
+        </div>
       </div>
-      <article class="decision-card"><span class="eyebrow">How it thinks</span><div class="decision-orbit">AI</div><h2>Evidence first.</h2><p>The first strategy uses genuine market prices, trend and momentum—not invented outcomes.</p><dl><div><dt>Data</dt><dd>Real market feed</dd></div><div><dt>Orders</dt><dd>Trading 212 Demo</dd></div><div><dt>Money</dt><dd>Strict fake £100</dd></div><div><dt>Guardrail</dt><dd>2% daily loss limit</dd></div></dl></article>
+      <aside class="decision-card">
+        <span class="decision-orbit">AI</span>
+        <p class="eyebrow">Latest decision</p>
+        <h2 id="decisionTitle">Standing by</h2>
+        <p id="decisionReason">Start the paper engine to begin analysing genuine price trend, momentum and risk data.</p>
+        <dl>
+          <div><dt>Risk per trade</dt><dd>Max 20%</dd></div>
+          <div><dt>Loss guard</dt><dd class="positive">2% daily</dd></div>
+          <div><dt>Mode</dt><dd>Paper only</dd></div>
+        </dl>
+      </aside>
     </section>
 
     <section id="safety" class="section shell">
-      <div class="section-heading"><div><p class="eyebrow">Guardrails</p><h2>Built to stay in test mode.</h2></div></div>
+      <div class="section-heading"><div><p class="eyebrow">Built before any broker link</p><h2>Real-money safety wall</h2></div><span class="pill safe">Broker locked</span></div>
       <div class="safety-grid">
         <article><span>01</span><h3>Fake £100 balance</h3><p>The test behaves like an account but never touches your money.</p></article>
         <article><span>02</span><h3>Immediate stop</h3><p>Stop freezes new decisions instantly. Open paper positions remain visible.</p></article>
@@ -94,7 +146,7 @@
       <span class="pulse-icon">▶</span>
       <p class="eyebrow">Start paper engine</p>
       <h2 id="confirmTitle">Put the fake £100 to work?</h2>
-      <p id="confirmCopy">The secure paper broker must be connected before the engine can start.</p>
+      <p id="confirmCopy">Start the one-month background test. It will run automatically whenever the US market is open.</p>
       <div id="loginFields" class="login-fields">
         <label for="ownerEmail">Owner email</label>
         <input id="ownerEmail" type="email" autocomplete="email" placeholder="you@example.com">
@@ -104,10 +156,10 @@
         <small id="loginMessage">Only the approved owner account can use the engine.</small>
       </div>
       <div class="simulation-result"><span>Starting balance</span><strong>£100.00</strong><small>Your progress is saved on this device</small></div>
-      <button id="confirmStart" class="button primary" type="button">Check connection</button>
+      <button id="confirmStart" class="button primary" type="button">Start one-month test</button>
     </div>
   </div>
   <script src="config.js"></script>
-  <script src="app.js?v=4" defer></script>
+  <script src="app.js?v=6" defer></script>
 </body>
 </html>
