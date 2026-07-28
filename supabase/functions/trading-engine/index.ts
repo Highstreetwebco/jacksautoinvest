@@ -30,7 +30,7 @@ Deno.serve(async (req) => {
         ...init,
         headers: { Authorization: `Basic ${basic}`, "Content-Type": "application/json", ...(init.headers || {}) }
       });
-      if (!response.ok) throw new Error(`Trading 212 returned ${response.status}`);
+      if (!response.ok) throw new Error(response.status === 429 ? "RATE_LIMITED" : `Trading 212 returned ${response.status}`);
       return response.status === 204 ? null : response.json();
     };
 
@@ -49,7 +49,30 @@ Deno.serve(async (req) => {
     }
 
     const universe = JSON.parse(Deno.env.get("TRADING_UNIVERSE") || "[]") as Array<{ symbol: string; ticker: string }>;
-    let brokerPositions = await broker("/equity/portfolio");
+    let rateLimited = false;
+    const loadBrokerPositions = async (force = false) => {
+      const cachedAt = settings.broker_cache_updated_at ? new Date(settings.broker_cache_updated_at).getTime() : 0;
+      const cacheIsFresh = Date.now() - cachedAt < 90_000;
+      if (!force && cacheIsFresh) return settings.broker_positions_cache || [];
+      try {
+        const latest = await broker("/equity/portfolio");
+        const cachedAt = new Date().toISOString();
+        settings.broker_positions_cache = latest;
+        settings.broker_cache_updated_at = cachedAt;
+        await admin.from("engine_settings").update({
+          broker_positions_cache: latest,
+          broker_cache_updated_at: cachedAt
+        }).eq("user_id", user.id);
+        return latest;
+      } catch (error) {
+        if (error instanceof Error && error.message === "RATE_LIMITED") {
+          rateLimited = true;
+          return settings.broker_positions_cache || [];
+        }
+        throw error;
+      }
+    };
+    let brokerPositions = await loadBrokerPositions();
     let ownedDecisions = (await admin.from("engine_decisions")
       .select("symbol,action,quantity")
       .eq("user_id", user.id)
@@ -136,7 +159,7 @@ Deno.serve(async (req) => {
         }
       }
       await admin.from("engine_decisions").insert({ user_id: user.id, ...decision });
-      brokerPositions = await broker("/equity/portfolio");
+      brokerPositions = await loadBrokerPositions(true);
       ownedDecisions = (await admin.from("engine_decisions")
         .select("symbol,action,quantity")
         .eq("user_id", user.id)
@@ -160,6 +183,7 @@ Deno.serve(async (req) => {
     return json({
       connected: true,
       mode: "Trading 212 Demo",
+      rateLimited,
       enabled: settings.enabled,
       cash: { free: Number(settings.test_cash) },
       positions,
