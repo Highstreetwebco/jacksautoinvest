@@ -10,4 +10,6 @@ A standalone paper-investing dashboard prototype.
 - Responsive mobile design
 - No broker connection or real-money trading
 
+The beta is deployed using GitHub Pages.
+
 This prototype is for product development and demonstrations only. It is not financial advice.
