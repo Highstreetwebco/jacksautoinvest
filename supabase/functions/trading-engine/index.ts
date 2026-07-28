@@ -52,6 +52,25 @@ Deno.serve(async (req) => {
     let positions = await broker("/equity/portfolio");
 
     if (action === "tick" && settings.enabled) {
+      const currentTotal = Number(cash.total ?? cash.result ?? cash.free ?? 0);
+      const today = new Date();
+      today.setUTCHours(0, 0, 0, 0);
+      const openingResult = await admin.from("account_snapshots").select("value").eq("user_id", user.id).gte("created_at", today.toISOString()).order("created_at", { ascending: true }).limit(1).maybeSingle();
+      const openingValue = Number(openingResult.data?.value || currentTotal);
+      const lossPercent = openingValue > 0 ? ((openingValue - currentTotal) / openingValue) * 100 : 0;
+      if (lossPercent >= Number(settings.daily_loss_limit)) {
+        await admin.from("engine_settings").update({ enabled: false, updated_at: new Date().toISOString() }).eq("user_id", user.id);
+        settings.enabled = false;
+        await admin.from("engine_decisions").insert({
+          user_id: user.id,
+          action: "STOP",
+          confidence: 100,
+          reason: `Automatic stop: the real paper account reached its ${settings.daily_loss_limit}% daily loss limit.`
+        });
+      }
+    }
+
+    if (action === "tick" && settings.enabled) {
       const marketKey = Deno.env.get("TWELVE_DATA_API_KEY");
       const universe = JSON.parse(Deno.env.get("TRADING_UNIVERSE") || "[]") as Array<{ symbol: string; ticker: string }>;
       let decision = { symbol: null as string | null, action: "HOLD", confidence: 0, reason: "No eligible real-market signal.", quantity: null as number | null, broker_order_id: null as string | null };
