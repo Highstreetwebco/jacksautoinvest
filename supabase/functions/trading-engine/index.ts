@@ -13,11 +13,20 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const ownerEmail = Deno.env.get("OWNER_EMAIL")?.toLowerCase();
+    const cronSecret = Deno.env.get("CRON_SECRET");
+    const isScheduledRequest = Boolean(cronSecret && req.headers.get("x-cron-secret") === cronSecret);
     const token = (req.headers.get("Authorization") || "").replace("Bearer ", "");
     const admin = createClient(supabaseUrl, serviceKey);
-    const { data: { user }, error: authError } = await admin.auth.getUser(token);
-    if (authError || !user) return json({ error: "Sign in required" }, 401);
-    const ownerEmail = Deno.env.get("OWNER_EMAIL")?.toLowerCase();
+    let user = null;
+    if (isScheduledRequest) {
+      const users = await admin.auth.admin.listUsers({ page: 1, perPage: 100 });
+      user = users.data.users.find(candidate => candidate.email?.toLowerCase() === ownerEmail) || null;
+    } else {
+      const auth = await admin.auth.getUser(token);
+      user = auth.data.user;
+      if (auth.error || !user) return json({ error: "Sign in required" }, 401);
+    }
     if (!ownerEmail || user.email?.toLowerCase() !== ownerEmail) return json({ error: "Owner access only" }, 403);
 
     const apiKey = Deno.env.get("TRADING212_API_KEY");
@@ -42,10 +51,54 @@ Deno.serve(async (req) => {
       const created = await admin.from("engine_settings").insert({ user_id: user.id }).select().single();
       settings = created.data;
     }
-    if (action === "start" || action === "stop") {
-      const enabled = action === "start";
-      await admin.from("engine_settings").update({ enabled, updated_at: new Date().toISOString() }).eq("user_id", user.id);
+    const now = new Date();
+    const marketParts = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      weekday: "short",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23"
+    }).formatToParts(now).filter(part => part.type !== "literal").map(part => [part.type, part.value]));
+    const marketDate = `${marketParts.year}-${marketParts.month}-${marketParts.day}`;
+    const marketMinutes = Number(marketParts.hour) * 60 + Number(marketParts.minute);
+    const marketOpen = !["Sat", "Sun"].includes(marketParts.weekday) && marketMinutes >= 570 && marketMinutes < 960;
+    const trialHasExpired = Boolean(settings.trial_ends_at && now.getTime() >= new Date(settings.trial_ends_at).getTime());
+    const trialActive = settings.autopilot_enabled &&
+      settings.daily_paused_on !== marketDate &&
+      !trialHasExpired;
+
+    if (action === "start") {
+      const trialStartedAt = !settings.trial_started_at || trialHasExpired ? now.toISOString() : settings.trial_started_at;
+      const trialEndsAt = !settings.trial_ends_at || trialHasExpired ? new Date(now.getTime() + 30 * 86400000).toISOString() : settings.trial_ends_at;
+      await admin.from("engine_settings").update({
+        enabled: marketOpen,
+        autopilot_enabled: true,
+        trial_started_at: trialStartedAt,
+        trial_ends_at: trialEndsAt,
+        updated_at: now.toISOString()
+      }).eq("user_id", user.id);
+      Object.assign(settings, { enabled: marketOpen, autopilot_enabled: true, trial_started_at: trialStartedAt, trial_ends_at: trialEndsAt });
+    } else if (action === "stop") {
+      await admin.from("engine_settings").update({
+        enabled: false,
+        autopilot_enabled: false,
+        updated_at: now.toISOString()
+      }).eq("user_id", user.id);
+      Object.assign(settings, { enabled: false, autopilot_enabled: false });
+    } else if (action === "scheduled") {
+      const enabled = Boolean(trialActive && marketOpen);
+      await admin.from("engine_settings").update({
+        enabled,
+        autopilot_enabled: trialHasExpired ? false : settings.autopilot_enabled,
+        last_background_run: now.toISOString(),
+        updated_at: now.toISOString()
+      }).eq("user_id", user.id);
       settings.enabled = enabled;
+      if (trialHasExpired) settings.autopilot_enabled = false;
+      settings.last_background_run = now.toISOString();
     }
 
     const universe = JSON.parse(Deno.env.get("TRADING_UNIVERSE") || "[]") as Array<{ symbol: string; ticker: string }>;
@@ -101,7 +154,9 @@ Deno.serve(async (req) => {
     const positionValue = (items: Array<Record<string, unknown>>) =>
       items.reduce((sum, position) => sum + Number(position.currentValue ?? Number(position.quantity || 0) * Number(position.currentPrice || 0)), 0);
 
-    if (action === "tick" && settings.enabled) {
+    const runTradingCycle = settings.enabled && ["tick", "scheduled", "start"].includes(action);
+
+    if (runTradingCycle) {
       const currentTotal = Number(settings.test_cash) + positionValue(positions);
       const today = new Date();
       today.setUTCHours(0, 0, 0, 0);
@@ -109,8 +164,13 @@ Deno.serve(async (req) => {
       const openingValue = Number(openingResult.data?.value || currentTotal);
       const lossPercent = openingValue > 0 ? ((openingValue - currentTotal) / openingValue) * 100 : 0;
       if (lossPercent >= Number(settings.daily_loss_limit)) {
-        await admin.from("engine_settings").update({ enabled: false, updated_at: new Date().toISOString() }).eq("user_id", user.id);
+        await admin.from("engine_settings").update({
+          enabled: false,
+          daily_paused_on: marketDate,
+          updated_at: new Date().toISOString()
+        }).eq("user_id", user.id);
         settings.enabled = false;
+        settings.daily_paused_on = marketDate;
         await admin.from("engine_decisions").insert({
           user_id: user.id,
           action: "STOP",
@@ -120,7 +180,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    if (action === "tick" && settings.enabled) {
+    if (runTradingCycle && settings.enabled) {
       const marketKey = Deno.env.get("TWELVE_DATA_API_KEY");
       let decision = { symbol: null as string | null, action: "HOLD", confidence: 0, reason: "No eligible real-market signal.", quantity: null as number | null, broker_order_id: null as string | null };
       if (!marketKey || !universe.length) {
@@ -130,7 +190,10 @@ Deno.serve(async (req) => {
         const marketResponse = await fetch(`https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(candidate.symbol)}&interval=5min&outputsize=30&apikey=${marketKey}`);
         const market = await marketResponse.json();
         const closes = (market.values || []).map((bar: { close: string }) => Number(bar.close)).filter(Number.isFinite);
-        if (closes.length >= 20) {
+        const latestBarIsToday = String(market.values?.[0]?.datetime || "").startsWith(marketDate);
+        if (!latestBarIsToday) {
+          decision.reason = "US market data is not current, so no trade was allowed.";
+        } else if (closes.length >= 20) {
           const average = (values: number[]) => values.reduce((a, b) => a + b, 0) / values.length;
           const fast = average(closes.slice(0, 5));
           const slow = average(closes.slice(0, 20));
@@ -185,6 +248,12 @@ Deno.serve(async (req) => {
       mode: "Trading 212 Demo",
       rateLimited,
       enabled: settings.enabled,
+      autopilotEnabled: settings.autopilot_enabled,
+      marketOpen,
+      trialStartedAt: settings.trial_started_at,
+      trialEndsAt: settings.trial_ends_at,
+      lastBackgroundRun: settings.last_background_run,
+      dailyPaused: settings.daily_paused_on === marketDate,
       cash: { free: Number(settings.test_cash) },
       positions,
       testAccount: { cash: Number(settings.test_cash), invested: investedValue, total: currentValue },
