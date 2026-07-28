@@ -100,10 +100,10 @@ export function analyse(shortBarsNewest: Bar[], longBarsNewest: Bar[], benchmark
   const sellAgreement = fastTrend < 0 && (slowTrend < 0 || macd < 0);
   const verdict = held
     ? (score <= 38 || sellAgreement ? "SELL" : "HOLD")
-    : (score >= 64 && buyAgreement ? "BUY" : "HOLD");
+    : (score >= 60 && buyAgreement ? "BUY" : "HOLD");
   const confidence = verdict === "HOLD" ? Math.round(Math.abs(score - 50) * 1.3) : Math.round(clamp(Math.abs(score - 50) * 2, 55, 95));
   const suggestedExposurePercent = verdict === "BUY"
-    ? Math.round(clamp(6 + ((score - 64) * 0.7) - (volatilityPercent * 2), 5, 20))
+    ? Math.round(clamp(10 + ((score - 60) * 0.75) - (volatilityPercent * 1.5), 8, 25))
     : 0;
 
   const explanation = verdict === "BUY"
