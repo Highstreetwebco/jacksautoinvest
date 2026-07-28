@@ -19,6 +19,7 @@ export type SignalResult = {
 };
 
 const average = (values: number[]) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const ema = (values: number[], period: number) => {
   if (!values.length) return 0;
@@ -52,10 +53,11 @@ const macdHistogram = (values: number[]) => {
 };
 const percentChange = (from: number, to: number) => from ? ((to / from) - 1) * 100 : 0;
 
-export function analyse(shortBarsNewest: Bar[], longBarsNewest: Bar[], benchmarkNewest: Bar[], held: boolean): SignalResult {
+export function analyse(shortBarsNewest: Bar[], longBarsNewest: Bar[], benchmarkNewest: Bar[], held: boolean, dailyBarsNewest: Bar[] = []): SignalResult {
   const shortBars = [...shortBarsNewest].reverse();
   const longBars = [...longBarsNewest].reverse();
   const benchmark = [...benchmarkNewest].reverse();
+  const dailyBars = [...dailyBarsNewest].reverse();
   const closes = shortBars.map(bar => bar.close);
   const longCloses = longBars.map(bar => bar.close);
   const benchmarkCloses = benchmark.map(bar => bar.close);
@@ -82,6 +84,27 @@ export function analyse(shortBarsNewest: Bar[], longBarsNewest: Bar[], benchmark
   const normalVolume = average(shortBars.slice(-20).map(bar => bar.volume).filter(Boolean));
   const volumeRatio = normalVolume ? recentVolume / normalVolume : 1;
   const impulse = percentChange(closes.at(-7) || price, price);
+  const sessionDate = shortBars.at(-1)?.datetime.slice(0, 10);
+  const sessionBars = shortBars.filter(bar => bar.datetime.startsWith(sessionDate || ""));
+  const sessionVolume = sum(sessionBars.map(bar => bar.volume));
+  const sessionTypicalValue = sum(sessionBars.map(bar => ((bar.high + bar.low + bar.close) / 3) * bar.volume));
+  const vwap = sessionVolume ? sessionTypicalValue / sessionVolume : price;
+  const ema9 = ema(closes, 9);
+  const dailyCloses = dailyBars.map(bar => bar.close);
+  const sma200 = dailyCloses.length >= 200 ? average(dailyCloses.slice(-200)) : 0;
+  const priorDaily = dailyBars.slice(-91, -1);
+  const support30 = priorDaily.length ? Math.min(...priorDaily.slice(-30).map(bar => bar.low)) : 0;
+  const resistance30 = priorDaily.length ? Math.max(...priorDaily.slice(-30).map(bar => bar.high)) : 0;
+  const support90 = priorDaily.length ? Math.min(...priorDaily.map(bar => bar.low)) : 0;
+  const resistance90 = priorDaily.length ? Math.max(...priorDaily.map(bar => bar.high)) : 0;
+  const intradayMove = sessionBars[0]?.open ? percentChange(sessionBars[0].open, price) : 0;
+  const stopDistance = Math.max(atr(shortBars) * 1.5, price * 0.005);
+  const stopPrice = Math.max(0, price - stopDistance);
+  const logicalTarget = resistance30 > price ? resistance30 : price + (stopDistance * 2);
+  const riskRewardRatio = stopDistance ? (logicalTarget - price) / stopDistance : 0;
+  const priceAboveVwap = price >= vwap;
+  const priceAboveEma9 = price >= ema9;
+  const priceAboveSma200 = !sma200 || price >= sma200;
 
   let score = 50;
   score += clamp(fastTrend * 9, -14, 14);
@@ -92,6 +115,12 @@ export function analyse(shortBarsNewest: Bar[], longBarsNewest: Bar[], benchmark
   score += volumeRatio > 1.15 ? 4 : volumeRatio < 0.7 ? -3 : 0;
   score += currentRsi >= 52 && currentRsi <= 68 ? 7 : currentRsi > 78 ? -12 : currentRsi < 34 ? 3 : 0;
   score += clamp(impulse * 2, -8, 8);
+  score += priceAboveVwap ? 4 : -4;
+  score += priceAboveEma9 ? 3 : -3;
+  score += priceAboveSma200 ? 3 : -3;
+  score += volumeRatio >= 2 ? 5 : 0;
+  score += intradayMove >= 3 ? 5 : 0;
+  score += riskRewardRatio >= 2 ? 4 : -5;
   score -= volatilityPercent > 1.8 ? clamp((volatilityPercent - 1.8) * 5, 0, 10) : 0;
   score = Math.round(clamp(score, 0, 100));
 
@@ -104,7 +133,11 @@ export function analyse(shortBarsNewest: Bar[], longBarsNewest: Bar[], benchmark
     volumeRatio >= 1.05
   ];
   const supportVotes = supportingSignals.filter(Boolean).length;
-  const buyAgreement = fastTrend > 0 && supportVotes >= 3 && !riskOff;
+  const buyAgreement = fastTrend > 0 &&
+    supportVotes >= 3 &&
+    priceAboveVwap &&
+    riskRewardRatio >= 2 &&
+    !riskOff;
   const sellAgreement = fastTrend < 0 && (slowTrend < 0 || macd < 0);
   const verdict = held
     ? (score <= 38 || sellAgreement ? "SELL" : "HOLD")
@@ -115,12 +148,12 @@ export function analyse(shortBarsNewest: Bar[], longBarsNewest: Bar[], benchmark
     : 0;
 
   const explanation = verdict === "BUY"
-    ? `Buy agreement: immediate trend is positive, ${supportVotes}/5 supporting momentum and volume signals agree, and the wider market is not risk-off. Composite score ${score}/100.`
+    ? `Buy agreement: immediate trend is positive, ${supportVotes}/5 supporting signals agree, price is above VWAP, projected reward/risk is ${riskRewardRatio.toFixed(2)}:1, and the wider market is not risk-off. Composite score ${score}/100.`
     : verdict === "SELL"
       ? `Sell protection: momentum and trend evidence weakened below the exit threshold. Composite score ${score}/100.`
       : held
         ? `Hold: exit evidence is not yet strong enough. Composite score ${score}/100.`
-        : `Hold: score ${score}/100; immediate trend is ${fastTrend > 0 ? "positive" : "not positive"}, ${supportVotes}/5 supporting signals agree${riskOff ? ", and the wider market is risk-off" : ""}. A buy requires 60+, positive immediate trend, 3/5 support and no risk-off veto.`;
+        : `Hold: score ${score}/100; immediate trend is ${fastTrend > 0 ? "positive" : "not positive"}, ${supportVotes}/5 supporting signals agree, VWAP ${priceAboveVwap ? "passed" : "failed"}, reward/risk is ${riskRewardRatio.toFixed(2)}:1${riskOff ? ", and the wider market is risk-off" : ""}. A buy requires 60+, positive immediate trend, 3/5 support, price above VWAP, at least 2:1 reward/risk and no risk-off veto.`;
 
   return {
     score,
@@ -138,6 +171,25 @@ export function analyse(shortBarsNewest: Bar[], longBarsNewest: Bar[], benchmark
       breakoutPercent: Number(breakoutPercent.toFixed(3)),
       volumeRatio: Number(volumeRatio.toFixed(2)),
       impulsePercent: Number(impulse.toFixed(3)),
+      relativeVolume: Number(volumeRatio.toFixed(2)),
+      intradayMovePercent: Number(intradayMove.toFixed(3)),
+      vwap: Number(vwap.toFixed(4)),
+      ema9: Number(ema9.toFixed(4)),
+      sma200: Number(sma200.toFixed(4)),
+      priceAboveVwap,
+      priceAboveEma9,
+      priceAboveSma200,
+      support30: Number(support30.toFixed(4)),
+      resistance30: Number(resistance30.toFixed(4)),
+      support90: Number(support90.toFixed(4)),
+      resistance90: Number(resistance90.toFixed(4)),
+      stopPrice: Number(stopPrice.toFixed(4)),
+      stopDistancePercent: Number(((stopDistance / price) * 100).toFixed(3)),
+      targetPrice: Number(logicalTarget.toFixed(4)),
+      riskRewardRatio: Number(riskRewardRatio.toFixed(2)),
+      premarketData: "Unavailable on current free plan",
+      shortFloatData: "Unavailable from connected sources",
+      level2Data: "Unavailable from connected sources",
       supportVotes,
       immediateTrendPositive: fastTrend > 0,
       riskOff
