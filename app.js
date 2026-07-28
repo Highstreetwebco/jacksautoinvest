@@ -97,27 +97,41 @@
   async function signIn() {
     const email = $("#ownerEmail").value.trim();
     const password = $("#ownerPassword").value;
+    const message = $("#loginMessage");
+    const button = $("#signInButton");
     if (!configured()) { $("#loginMessage").textContent = "Supabase has not been connected yet."; return; }
     if (!email || !password) { $("#loginMessage").textContent = "Enter your email and password."; return; }
-    const button = $("#signInButton"); button.disabled = true;
+    button.disabled = true;
+    button.textContent = "Signing in…";
+    message.textContent = "Securely checking your account…";
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
     try {
       const response = await fetch(`${cfg.supabaseUrl}/auth/v1/token?grant_type=password`, {
         method: "POST",
         headers: { apikey: cfg.supabaseAnonKey, "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email, password }),
+        signal: controller.signal
       });
+      const details = await response.json().catch(() => ({}));
       if (!response.ok) {
-        const details = await response.json().catch(() => ({}));
         throw new Error(details.msg || details.message || details.error_description || "Sign in failed.");
       }
-      session = await response.json();
+      session = details;
       localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-      $("#loginMessage").textContent = "Signed in securely.";
+      message.textContent = "Signed in securely.";
       $("#loginFields").hidden = true;
       $("#confirmStart").hidden = false;
       await refresh();
-    } catch (error) { $("#loginMessage").textContent = error.message; }
-    finally { button.disabled = false; }
+    } catch (error) {
+      message.textContent = error.name === "AbortError"
+        ? "Supabase took too long to respond. Check your connection and try again."
+        : error.message || "Sign in failed. Please try again.";
+    } finally {
+      clearTimeout(timeout);
+      button.disabled = false;
+      button.textContent = "Sign in securely";
+    }
   }
   $("#menuButton").addEventListener("click", () => { const open = $("#mainNav").classList.toggle("open"); $("#menuButton").setAttribute("aria-expanded", String(open)); });
   $("#mainNav").querySelectorAll("a").forEach(a => a.addEventListener("click", () => $("#mainNav").classList.remove("open")));
@@ -128,6 +142,9 @@
     $("#confirmStart").hidden = !session;
   });
   $("#signInButton").addEventListener("click", signIn);
+  $("#ownerPassword").addEventListener("keydown", event => {
+    if (event.key === "Enter") signIn();
+  });
   $("#confirmStart").addEventListener("click", () => changeEngine("start"));
   $("#stopEngine").addEventListener("click", () => changeEngine("stop"));
   $("#closeConfirm").addEventListener("click", () => { $("#confirmPanel").hidden = true; document.body.style.overflow = ""; });
