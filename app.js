@@ -65,7 +65,9 @@
     $("#chartCaption").textContent = systemRunning ? brokerState.marketOpen ? "LIVE BACKGROUND TEST" : "BACKGROUND ENGINE RUNNING" : "ENGINE STOPPED";
     $("#lastUpdated").textContent = `Broker synced ${new Date(brokerState.updatedAt).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}`;
     $("#analysisText").textContent = systemRunning
-      ? brokerState.marketOpen ? "Automatic secured market cycles are running in the background." : "AI remains active and will trade automatically when the US market opens."
+      ? brokerState.marketOpen
+        ? `Market scanner active · rotating through ${Number(brokerState.scanner?.universeSize || 0).toLocaleString("en-GB")} Trading 212 US shares`
+        : `Market scanner ready · ${Number(brokerState.scanner?.universeSize || 0).toLocaleString("en-GB")} shares queued for the next opening`
       : "Connected—press Start when ready";
     renderChart(brokerState.snapshots || []);
     $("#positionGrid").innerHTML = positions.length ? positions.map(p => `<article class="position-card"><div><span class="ticker">${p.ticker || p.instrument?.ticker || "POSITION"}</span><small>Trading 212 Demo</small></div><strong>${money(p.currentValue ?? Number(p.quantity || 0) * Number(p.currentPrice || 0))}</strong><div class="position-meta"><span>${Number(p.quantity || 0).toFixed(4)} units</span><b>${money(p.ppl || 0)}</b></div></article>`).join("") : `<article class="empty-state"><span>◎</span><h3>No open paper positions</h3><p>The connected Demo account currently holds cash.</p></article>`;
