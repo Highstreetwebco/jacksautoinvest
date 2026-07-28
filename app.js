@@ -54,10 +54,22 @@
       ["Price impulse", Number(s.impulsePercent) > 0, `${Number(s.impulsePercent).toFixed(2)}%`],
       ["Breakout", Number(s.breakoutPercent) > 0, `${Number(s.breakoutPercent).toFixed(2)}%`],
       ["Buying volume", Number(s.volumeRatio) >= 1.05, `${Number(s.volumeRatio).toFixed(2)}×`],
-      ["Market supportive", s.riskOff === false, s.riskOff ? "Risk off" : "No veto"]
+      ["Relative volume 2×", Number(s.relativeVolume) >= 2, `${Number(s.relativeVolume || 0).toFixed(2)}×`],
+      ["Intraday move 3%+", Number(s.intradayMovePercent) >= 3, `${Number(s.intradayMovePercent || 0).toFixed(2)}%`],
+      ["Above VWAP", s.priceAboveVwap === true, s.vwap ? `$${Number(s.vwap).toFixed(2)}` : "—"],
+      ["Above EMA 9", s.priceAboveEma9 === true, s.ema9 ? `$${Number(s.ema9).toFixed(2)}` : "—"],
+      ["Above SMA 200", s.priceAboveSma200 === true, s.sma200 ? `$${Number(s.sma200).toFixed(2)}` : "—"],
+      ["Reward/risk 2:1+", Number(s.riskRewardRatio) >= 2, `${Number(s.riskRewardRatio || 0).toFixed(2)}:1`],
+      ["30-day support", null, s.support30 ? `$${Number(s.support30).toFixed(2)}` : "—"],
+      ["30-day resistance", null, s.resistance30 ? `$${Number(s.resistance30).toFixed(2)}` : "—"],
+      ["Planned stop", null, s.stopPrice ? `$${Number(s.stopPrice).toFixed(2)}` : "—"],
+      ["Market supportive", s.riskOff === false, s.riskOff ? "Risk off" : "No veto"],
+      ["Pre-market high/low", null, s.premarketData || "Unavailable"],
+      ["Short float", null, s.shortFloatData || "Unavailable"],
+      ["Level 2 flow", null, s.level2Data || "Unavailable"]
     ];
     return `<div class="decision-checks">${checks.map(([label, passed, value]) =>
-      `<span class="${passed ? "pass" : "fail"}"><i>${passed ? "✓" : "×"}</i><b>${label}</b><small>${value}</small></span>`
+      `<span class="${passed == null ? "neutral" : passed ? "pass" : "fail"}"><i>${passed == null ? "—" : passed ? "✓" : "×"}</i><b>${label}</b><small>${value}</small></span>`
     ).join("")}</div>`;
   }
   function renderConnected() {
