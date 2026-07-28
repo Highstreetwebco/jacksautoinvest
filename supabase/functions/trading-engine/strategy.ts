@@ -96,7 +96,15 @@ export function analyse(shortBarsNewest: Bar[], longBarsNewest: Bar[], benchmark
   score = Math.round(clamp(score, 0, 100));
 
   const riskOff = benchmarkTrend < -0.15;
-  const buyAgreement = fastTrend > 0 && slowTrend > 0 && macd > 0 && !riskOff;
+  const supportingSignals = [
+    slowTrend > 0,
+    macd > 0,
+    impulse > 0,
+    breakoutPercent > 0,
+    volumeRatio >= 1.05
+  ];
+  const supportVotes = supportingSignals.filter(Boolean).length;
+  const buyAgreement = fastTrend > 0 && supportVotes >= 3 && !riskOff;
   const sellAgreement = fastTrend < 0 && (slowTrend < 0 || macd < 0);
   const verdict = held
     ? (score <= 38 || sellAgreement ? "SELL" : "HOLD")
@@ -107,10 +115,12 @@ export function analyse(shortBarsNewest: Bar[], longBarsNewest: Bar[], benchmark
     : 0;
 
   const explanation = verdict === "BUY"
-    ? `Buy agreement: short and hourly trends are positive, momentum is confirmed and the wider US-market regime is supportive. Composite score ${score}/100.`
+    ? `Buy agreement: immediate trend is positive, ${supportVotes}/5 supporting momentum and volume signals agree, and the wider market is not risk-off. Composite score ${score}/100.`
     : verdict === "SELL"
       ? `Sell protection: momentum and trend evidence weakened below the exit threshold. Composite score ${score}/100.`
-      : `Hold: the independent signals did not agree strongly enough to justify ${held ? "an exit" : "risking capital"}. Composite score ${score}/100.`;
+      : held
+        ? `Hold: exit evidence is not yet strong enough. Composite score ${score}/100.`
+        : `Hold: score ${score}/100; immediate trend is ${fastTrend > 0 ? "positive" : "not positive"}, ${supportVotes}/5 supporting signals agree${riskOff ? ", and the wider market is risk-off" : ""}. A buy requires 60+, positive immediate trend, 3/5 support and no risk-off veto.`;
 
   return {
     score,
@@ -128,6 +138,8 @@ export function analyse(shortBarsNewest: Bar[], longBarsNewest: Bar[], benchmark
       breakoutPercent: Number(breakoutPercent.toFixed(3)),
       volumeRatio: Number(volumeRatio.toFixed(2)),
       impulsePercent: Number(impulse.toFixed(3)),
+      supportVotes,
+      immediateTrendPositive: fastTrend > 0,
       riskOff
     },
     explanation
