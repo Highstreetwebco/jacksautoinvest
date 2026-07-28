@@ -50,9 +50,11 @@ Deno.serve(async (req) => {
 
     let cash = await broker("/equity/account/cash");
     let positions = await broker("/equity/portfolio");
+    const positionValue = (items: Array<Record<string, unknown>>) =>
+      items.reduce((sum, position) => sum + Number(position.currentValue ?? Number(position.quantity || 0) * Number(position.currentPrice || 0)), 0);
 
     if (action === "tick" && settings.enabled) {
-      const currentTotal = Number(cash.total ?? cash.result ?? cash.free ?? 0);
+      const currentTotal = Number(settings.test_cash) + positionValue(positions);
       const today = new Date();
       today.setUTCHours(0, 0, 0, 0);
       const openingResult = await admin.from("account_snapshots").select("value").eq("user_id", user.id).gte("created_at", today.toISOString()).order("created_at", { ascending: true }).limit(1).maybeSingle();
@@ -87,17 +89,22 @@ Deno.serve(async (req) => {
           const slow = average(closes.slice(0, 20));
           const momentum = (fast / slow) - 1;
           const confidence = Math.min(95, Math.round(60 + Math.abs(momentum) * 4000));
-          const total = Number(cash.total ?? cash.result ?? cash.free ?? 0);
-          const maxValue = total * (Number(settings.max_position_percent) / 100);
+          const testCash = Number(settings.test_cash);
+          const maxValue = Number(settings.starting_balance) * (Number(settings.max_position_percent) / 100);
           const held = positions.find((p: { ticker?: string }) => p.ticker === candidate.ticker);
           decision = { symbol: candidate.symbol, action: "HOLD", confidence, reason: "Real five-minute momentum remained inside the trade threshold.", quantity: null, broker_order_id: null };
-          if (momentum > 0.002 && !held && maxValue >= fast) {
-            const quantity = Math.max(0.0001, Number((maxValue / fast).toFixed(4)));
+          if (momentum > 0.002 && !held && testCash >= 1) {
+            const orderValue = Math.min(testCash, maxValue);
+            const quantity = Math.max(0.0001, Number((orderValue / fast).toFixed(4)));
             const order = await broker("/equity/orders/market", { method: "POST", body: JSON.stringify({ ticker: candidate.ticker, quantity }) });
+            settings.test_cash = Math.max(0, testCash - (quantity * fast));
+            await admin.from("engine_settings").update({ test_cash: settings.test_cash, updated_at: new Date().toISOString() }).eq("user_id", user.id);
             decision = { symbol: candidate.symbol, action: "BUY", confidence, reason: "Real five-minute average moved above the twenty-period average while exposure remained below 20%.", quantity, broker_order_id: String(order?.id || "") };
           } else if (momentum < -0.002 && held) {
             const quantity = -Math.abs(Number(held.quantity));
             const order = await broker("/equity/orders/market", { method: "POST", body: JSON.stringify({ ticker: candidate.ticker, quantity }) });
+            settings.test_cash = testCash + (Math.abs(quantity) * fast);
+            await admin.from("engine_settings").update({ test_cash: settings.test_cash, updated_at: new Date().toISOString() }).eq("user_id", user.id);
             decision = { symbol: candidate.symbol, action: "SELL", confidence, reason: "Real short-term momentum moved below the exit threshold.", quantity, broker_order_id: String(order?.id || "") };
           }
         } else {
@@ -109,7 +116,8 @@ Deno.serve(async (req) => {
       positions = await broker("/equity/portfolio");
     }
 
-    const currentValue = Number(cash.total ?? cash.result ?? cash.free ?? 0);
+    const investedValue = positionValue(positions);
+    const currentValue = Number(settings.test_cash) + investedValue;
     if (currentValue > 0) await admin.from("account_snapshots").insert({ user_id: user.id, value: currentValue });
 
     const [decisions, snapshots] = await Promise.all([
@@ -122,6 +130,7 @@ Deno.serve(async (req) => {
       enabled: settings.enabled,
       cash,
       positions,
+      testAccount: { cash: Number(settings.test_cash), invested: investedValue, total: currentValue },
       decisions: decisions.data || [],
       snapshots: (snapshots.data || []).reverse(),
       rules: {
