@@ -1,0 +1,6 @@
+project_id = "wupecgimrmgmdzqvrkdr"
+
+[functions.trading-engine]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/trading-engine/index.ts"
