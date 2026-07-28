@@ -63,7 +63,11 @@
     $("#todayChange").textContent = `${gain >= 0 ? "+" : ""}${money(gain)}`;
     $("#tradeCount").textContent = String(brokerState.decisions?.filter(d => d.action !== "HOLD").length || 0);
     $("#chartCaption").textContent = systemRunning ? brokerState.marketOpen ? "LIVE BACKGROUND TEST" : "BACKGROUND ENGINE RUNNING" : "ENGINE STOPPED";
-    $("#lastUpdated").textContent = `Broker synced ${new Date(brokerState.updatedAt).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}`;
+    const lastCheck = brokerState.lastBackgroundRun ? new Date(brokerState.lastBackgroundRun) : null;
+    const checkAge = lastCheck ? Math.max(0, Math.floor((Date.now() - lastCheck.getTime()) / 1000)) : null;
+    $("#lastUpdated").textContent = checkAge == null
+      ? "Waiting for first server check"
+      : `Background check ${checkAge < 60 ? `${checkAge}s ago` : `${Math.floor(checkAge / 60)}m ago`}`;
     $("#analysisText").textContent = systemRunning
       ? brokerState.marketOpen
         ? `Public-market scanner active · ${Number(brokerState.scanner?.publicCandidates || 0)} live candidates · ${Number(brokerState.scanner?.universeSize || 0).toLocaleString("en-GB")} tradable shares`
@@ -164,7 +168,11 @@
   $("#closeConfirm").addEventListener("click", () => { $("#confirmPanel").hidden = true; document.body.style.overflow = ""; });
   $("#resetAccount").addEventListener("click", refresh);
   if (configured() && session) {
-    refreshSession().then(ok => ok ? refresh() : renderDisconnected("Please sign in again"));
+    refreshSession().then(ok => {
+      if (!ok) return renderDisconnected("Please sign in again");
+      refresh();
+      setInterval(refresh, 30_000);
+    });
   } else {
     renderDisconnected();
   }
