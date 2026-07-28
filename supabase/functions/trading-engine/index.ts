@@ -219,7 +219,7 @@ Deno.serve(async (req) => {
     };
     let brokerPositions = await loadBrokerPositions();
     let ownedDecisions = (await admin.from("engine_decisions")
-      .select("symbol,action,quantity")
+      .select("symbol,action,quantity,signals,created_at")
       .eq("user_id", user.id)
       .in("action", ["BUY", "SELL"])
       .order("created_at", { ascending: true })).data || [];
@@ -274,6 +274,44 @@ Deno.serve(async (req) => {
       }
     }
 
+    const stoppedThisCycle = new Set<string>();
+    if (runTradingCycle && settings.enabled && positions.length) {
+      for (const position of positions) {
+        const instrument = universe.find(item => item.ticker === position.ticker);
+        const latestEntry = [...ownedDecisions].reverse().find(decision =>
+          decision.symbol === instrument?.symbol && decision.action === "BUY" && Number(decision.quantity || 0) > 0);
+        const assignedStop = Number(latestEntry?.signals?.assignedStopPrice || latestEntry?.signals?.stopPrice || 0);
+        const currentPrice = Number(position.currentPrice || 0);
+        if (!instrument || !assignedStop || !currentPrice || currentPrice > assignedStop) continue;
+        const quantity = -Math.abs(Number(position.quantity || 0));
+        const order = await broker("/equity/orders/market", {
+          method: "POST",
+          body: JSON.stringify({ ticker: instrument.ticker, quantity })
+        });
+        settings.test_cash = Number(settings.test_cash) + (Math.abs(quantity) * currentPrice);
+        await admin.from("engine_settings").update({
+          test_cash: settings.test_cash,
+          updated_at: now.toISOString()
+        }).eq("user_id", user.id);
+        await admin.from("engine_decisions").insert({
+          user_id: user.id,
+          symbol: instrument.symbol,
+          action: "SELL",
+          confidence: 100,
+          quantity,
+          broker_order_id: String(order?.id || ""),
+          reference_price: currentPrice,
+          score: 0,
+          signals: { assignedStopPrice: assignedStop, hardStopTriggered: true },
+          strategy_version: "mechanical-stop-v1",
+          reason: `HARD STOP EXECUTED: ${instrument.symbol} reached $${currentPrice.toFixed(2)}, at or below its assigned $${assignedStop.toFixed(2)} stop. The full paper position was closed without lowering the stop.`
+        });
+        stoppedThisCycle.add(instrument.symbol);
+        ownedDecisions.push({ symbol: instrument.symbol, action: "SELL", quantity, signals: {}, created_at: now.toISOString() });
+      }
+      positions = testPositions();
+    }
+
     if (runTradingCycle && settings.enabled && deepScanDue) {
       const marketKey = Deno.env.get("TWELVE_DATA_API_KEY");
       let decision = {
@@ -285,7 +323,7 @@ Deno.serve(async (req) => {
       if (!marketKey || !universe.length) {
         decision.reason = "Market-data key or approved instrument universe is not configured.";
       } else {
-        const fetchSeries = async (symbol: string, interval: "5min" | "1h", outputsize = 60): Promise<Bar[]> => {
+        const fetchSeries = async (symbol: string, interval: "5min" | "1h" | "1day", outputsize = 60): Promise<Bar[]> => {
           const response = await fetch(`https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(symbol)}&interval=${interval}&outputsize=${outputsize}&apikey=${marketKey}`);
           const payload = await response.json();
           if (!response.ok || payload.status === "error") throw new Error(payload.message || `Market data failed for ${symbol}`);
@@ -298,7 +336,7 @@ Deno.serve(async (req) => {
             volume: Number(bar.volume || 0)
           })).filter((bar: Bar) => Number.isFinite(bar.close));
         };
-        const scanSize = 4;
+        const scanSize = 3;
         const cursor = Number(settings.scan_cursor || 0) % universe.length;
         const rotating = Array.from({ length: Math.min(scanSize, universe.length) }, (_, offset) =>
           universe[(cursor + offset) % universe.length]);
@@ -340,13 +378,16 @@ Deno.serve(async (req) => {
             const bHeld = heldInstruments.some(item => item.ticker === b.instrument.ticker) ? 1 : 0;
             return (bHeld - aHeld) || (b.activity - a.activity);
           })
-          .slice(0, 3);
+          .slice(0, 2);
         const benchmark = await fetchSeries("SPY", "1h");
         const analyses = await Promise.all(deepCandidates.map(async candidate => {
           const { instrument, bars: shortBars } = candidate;
-          const longBars = await fetchSeries(instrument.symbol, "1h");
+          const [longBars, dailyBars] = await Promise.all([
+            fetchSeries(instrument.symbol, "1h"),
+            fetchSeries(instrument.symbol, "1day", 220)
+          ]);
           const held = positions.some((position: { ticker?: string }) => position.ticker === instrument.ticker);
-          let current = analyse(shortBars, longBars, benchmark, held);
+          let current = analyse(shortBars, longBars, benchmark, held, dailyBars);
           const heldPosition = positions.find((position: { ticker?: string }) => position.ticker === instrument.ticker);
           const averagePrice = Number(heldPosition?.averagePrice || 0);
           const currentPrice = Number(heldPosition?.currentPrice || current.referencePrice || 0);
@@ -377,7 +418,9 @@ Deno.serve(async (req) => {
         settings.scan_cursor = nextCursor;
         await admin.from("engine_settings").update({ scan_cursor: nextCursor }).eq("user_id", user.id);
         const sell = analyses.filter(item => item.held && item.result.verdict === "SELL").sort((a, b) => a.result.score - b.result.score)[0];
-        const buy = analyses.filter(item => !item.held && item.result.verdict === "BUY").sort((a, b) => b.result.score - a.result.score)[0];
+        const buy = analyses
+          .filter(item => !item.held && item.result.verdict === "BUY" && !stoppedThisCycle.has(item.instrument.symbol))
+          .sort((a, b) => b.result.score - a.result.score)[0];
         const selected = sell || buy || [...analyses].sort((a, b) => Math.abs(b.result.score - 50) - Math.abs(a.result.score - 50))[0];
         if (selected) {
           const { instrument, held, result } = selected;
@@ -400,19 +443,53 @@ Deno.serve(async (req) => {
               candidatesDeepAnalysed: deepCandidates.length
             },
             reference_price: result.referencePrice,
-            strategy_version: "three-signal-opportunity-v7"
+            strategy_version: "mechanical-day-trader-v8"
           };
           const testCash = Number(settings.test_cash);
           if (result.verdict === "BUY" && !held && testCash >= 1) {
             const exposureCap = Number(settings.starting_balance) * (Number(settings.max_position_percent) / 100);
             const intelligentSize = Number(settings.starting_balance) * (result.suggestedExposurePercent / 100);
-            const orderValue = Math.min(testCash, exposureCap, intelligentSize);
+            const stopDistancePercent = Number(result.signals.stopDistancePercent || 3);
+            const onePercentRiskSize = stopDistancePercent > 0
+              ? (Number(settings.starting_balance) * 0.01) / (stopDistancePercent / 100)
+              : exposureCap;
+            const orderValue = Math.min(testCash, exposureCap, intelligentSize, onePercentRiskSize);
             const quantity = Math.max(0.0001, Number((orderValue / result.referencePrice).toFixed(4)));
             const order = await broker("/equity/orders/market", { method: "POST", body: JSON.stringify({ ticker: instrument.ticker, quantity }) });
             settings.test_cash = Math.max(0, testCash - (quantity * result.referencePrice));
             await admin.from("engine_settings").update({ test_cash: settings.test_cash, updated_at: new Date().toISOString() }).eq("user_id", user.id);
             decision.quantity = quantity;
             decision.broker_order_id = String(order?.id || "");
+            const stopPrice = Number(result.signals.stopPrice || result.referencePrice * 0.97);
+            const riskPerShare = Math.max(0, result.referencePrice - stopPrice);
+            const targetOne = result.referencePrice + (riskPerShare * 2);
+            const targetTwo = result.referencePrice + (riskPerShare * 3);
+            const riskAmount = quantity * riskPerShare;
+            const strategy = Number(result.signals.breakoutPercent || 0) > 0
+              ? "Opening Range Breakout"
+              : result.signals.priceAboveVwap
+                ? "VWAP Pullback"
+                : "Support Bounce";
+            decision.signals = {
+              ...decision.signals,
+              strategy,
+              entryTriggerPrice: result.referencePrice,
+              assignedStopPrice: stopPrice,
+              profitTargetOne: targetOne,
+              profitTargetTwo: targetTwo,
+              calculatedRiskAmount: riskAmount,
+              onePercentRiskRulePassed: riskAmount <= Number(settings.starting_balance) * 0.01
+            };
+            decision.reason = `[TRADE SIGNAL GENERATED]
+TICKER: ${instrument.symbol}
+STRATEGY: ${strategy}
+DIRECTION: LONG
+ENTRY TRIGGER: $${result.referencePrice.toFixed(2)}
+ASSIGNED STOP: $${stopPrice.toFixed(2)} (calculated paper risk: £${riskAmount.toFixed(2)})
+TARGET 1: $${targetOne.toFixed(2)} (2:1)
+TARGET 2: $${targetTwo.toFixed(2)} (3:1)
+POSITION: ${quantity.toFixed(4)} shares
+RISK: Sized below 1% of the £${Number(settings.starting_balance).toFixed(0)} paper account; setup reward/risk ${Number(result.signals.riskRewardRatio || 0).toFixed(2)}:1.`;
           } else if (result.verdict === "SELL" && held) {
             const heldPosition = positions.find((position: { ticker?: string }) => position.ticker === instrument.ticker);
             const quantity = -Math.abs(Number(heldPosition?.quantity || 0));
@@ -433,7 +510,7 @@ Deno.serve(async (req) => {
       }).eq("user_id", user.id);
       brokerPositions = await loadBrokerPositions(true);
       ownedDecisions = (await admin.from("engine_decisions")
-        .select("symbol,action,quantity")
+        .select("symbol,action,quantity,signals,created_at")
         .eq("user_id", user.id)
         .in("action", ["BUY", "SELL"])
         .order("created_at", { ascending: true })).data || [];
