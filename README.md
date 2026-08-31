@@ -19,3 +19,7 @@ A standalone paper-investing dashboard prototype.
 - The public screen stays disconnected until setup is complete and no longer manufactures returns.
 
 This prototype is for product development and demonstrations only. It is not financial advice.
+
+## Deployment
+
+Published with GitHub Pages under the High Street Web Co account.
